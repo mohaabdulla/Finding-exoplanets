@@ -25,9 +25,7 @@ venv/
 env/
 ENV/
 
-# Data files
-*.csv
-data/
+
 
 # Model files
 *.pkl

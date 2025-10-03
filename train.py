@@ -1,11 +1,13 @@
 """
-Training script for exoplanet classification using machine learning.
+Exoplanet classification with astrophysical-only features, engineered features,
+and a Habitable Zone (HZ) flag. No fixed random_state (non-deterministic runs).
 
-This script implements a two-stage approach:
-1. Stage 1: IsolationForest for anomaly detection and filtering
-2. Stage 2: Multiple classifiers (LogisticRegression, DecisionTree, RandomForest)
-
-Uses Monte Carlo cross-validation for robust model evaluation.
+Outputs:
+- Monte Carlo CV metrics
+- Final evaluation
+- HZ counts and percentages:
+  (a) True CONFIRMED planets in HZ / total true CONFIRMED
+  (b) Predicted planets in HZ / total predicted planets
 """
 
 import os
@@ -19,34 +21,87 @@ from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    classification_report,
-    confusion_matrix,
+    accuracy_score, precision_score, recall_score, f1_score,
+    classification_report, confusion_matrix,
 )
 import joblib
 
 warnings.filterwarnings("ignore")
 
 
-class ExoplanetClassifier:
-    """
-    A two-stage exoplanet classification system.
-    
-    Stage 1: IsolationForest for anomaly detection
-    Stage 2: Multiple classifiers for final prediction
-    """
+# ----------------------------- Feature engineering -----------------------------
 
-    def __init__(self, random_state=42):
-        """
-        Initialize the classifier.
-        
-        Args:
-            random_state: Random state for reproducibility
-        """
-        self.random_state = random_state
+def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add general engineered features (logs, ratios, colors, duration/period)."""
+    df = df.copy()
+
+    # Log transforms (use log1p for safety)
+    for col in ["koi_period", "koi_depth", "koi_prad", "koi_insol"]:
+        if col in df.columns:
+            df[f"log_{col}"] = np.log1p(df[col])
+
+    # Ratios / normalizations
+    if {"koi_depth", "koi_srad"}.issubset(df.columns):
+        df["depth_norm"] = df["koi_depth"] / df["koi_srad"]
+    if {"koi_prad", "koi_srad"}.issubset(df.columns):
+        df["prad_srad_ratio"] = df["koi_prad"] / df["koi_srad"]
+    if {"koi_sma", "koi_srad"}.issubset(df.columns):
+        df["a_scaled"] = df["koi_sma"] / df["koi_srad"]
+
+    # Colors from magnitudes
+    if {"koi_gmag", "koi_rmag"}.issubset(df.columns):
+        df["g_r"] = df["koi_gmag"] - df["koi_rmag"]
+    if {"koi_rmag", "koi_imag"}.issubset(df.columns):
+        df["r_i"] = df["koi_rmag"] - df["koi_imag"]
+    if {"koi_jmag", "koi_hmag"}.issubset(df.columns):
+        df["j_h"] = df["koi_jmag"] - df["koi_hmag"]
+
+    # Duration vs period
+    if {"koi_duration", "koi_period"}.issubset(df.columns):
+        df["dur_period_ratio"] = df["koi_duration"] / df["koi_period"]
+
+    return df
+
+
+def add_habitability(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add Habitable Zone fields using:
+      L* ~ (R*/Rsun)^2 * (Teff/5777)^4
+      d_center = sqrt(L*)
+      d_inner = 0.95 * d_center
+      d_outer = 1.37 * d_center
+    habitable_zone = 1 if d_inner <= a (koi_sma) <= d_outer else 0
+    """
+    df = df.copy()
+    needed = {"koi_srad", "koi_steff", "koi_sma"}
+    if needed.issubset(df.columns):
+        stellar_lum = (df["koi_srad"] ** 2) * (df["koi_steff"] / 5777.0) ** 4
+        d_center = np.sqrt(stellar_lum)
+        d_inner = 0.95 * d_center
+        d_outer = 1.37 * d_center
+
+        df["stellar_lum"] = stellar_lum
+        df["d_center"] = d_center
+        df["d_inner"] = d_inner
+        df["d_outer"] = d_outer
+        df["habitable_zone"] = (
+            (df["koi_sma"] >= d_inner) & (df["koi_sma"] <= d_outer)
+        ).astype(int)
+    else:
+        # If any required column is missing, create a safe default
+        df["stellar_lum"] = np.nan
+        df["d_center"] = np.nan
+        df["d_inner"] = np.nan
+        df["d_outer"] = np.nan
+        df["habitable_zone"] = 0
+
+    return df
+
+
+# ------------------------------- Classifier ------------------------------------
+
+class ExoplanetClassifier:
+    def __init__(self):
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy="median")
         self.label_encoders = {}
@@ -54,442 +109,266 @@ class ExoplanetClassifier:
         self.categorical_features = []
         self.numerical_features = []
 
-        # Stage 1: Anomaly detection
+        # Stage 1: anomaly detection (random_state=None for stochastic runs)
         self.anomaly_detector = IsolationForest(
-            contamination=0.1, random_state=random_state, n_jobs=-1
+            contamination=0.10, random_state=None, n_jobs=-1
         )
 
-        # Stage 2: Classifiers
+        # Stage 2: classifiers
         self.classifiers = {
             "LogisticRegression": LogisticRegression(
-                max_iter=1000, random_state=random_state, n_jobs=-1
+                max_iter=1000, random_state=None, n_jobs=-1
             ),
-            "DecisionTree": DecisionTreeClassifier(random_state=random_state),
+            "DecisionTree": DecisionTreeClassifier(random_state=None),
             "RandomForest": RandomForestClassifier(
-                n_estimators=100, random_state=random_state, n_jobs=-1
+                n_estimators=300, random_state=None, n_jobs=-1
             ),
         }
 
         self.best_classifier_name = None
         self.best_classifier = None
 
+    # --------------------------- Data handling ---------------------------
+
     def load_data(self, file_path):
-        """
-        Load data from CSV file.
-        
-        Args:
-            file_path: Path to the CSV file
-            
-        Returns:
-            DataFrame with loaded data
-        """
         print(f"Loading data from {file_path}...")
         df = pd.read_csv(file_path)
         print(f"Data loaded: {df.shape[0]} rows, {df.shape[1]} columns")
         return df
 
     def prepare_target(self, df, target_column="koi_disposition"):
-        """
-        Prepare target variable (CONFIRMED=1, others=0).
-        
-        Args:
-            df: Input DataFrame
-            target_column: Name of the target column
-            
-        Returns:
-            DataFrame with processed target
-        """
         print(f"\nPreparing target variable '{target_column}'...")
-
         if target_column not in df.columns:
             raise ValueError(f"Target column '{target_column}' not found in data")
-
-        # Create binary target: CONFIRMED=1, others=0
+        df = df.copy()
         df["target"] = (df[target_column] == "CONFIRMED").astype(int)
-
-        print(f"Target distribution:")
         print(df["target"].value_counts())
         print(f"Class balance: {df['target'].mean():.2%} positive class")
-
         return df
+
+    def select_safe_features(self, df):
+        """Whitelist astrophysical/stellar/magnitudes + engineered + HZ fields."""
+        base = [
+            "koi_period", "koi_duration", "koi_depth", "koi_ror",
+            "koi_srho", "koi_prad", "koi_sma", "koi_incl",
+            "koi_teq", "koi_insol", "koi_dor",
+            "koi_steff", "koi_slogg", "koi_smet",
+            "koi_srad", "koi_smass",
+            "ra", "dec",
+            "koi_kepmag", "koi_gmag", "koi_rmag", "koi_imag", "koi_zmag",
+            "koi_jmag", "koi_hmag", "koi_kmag",
+            # engineered
+            "log_koi_period", "log_koi_depth", "log_koi_prad", "log_koi_insol",
+            "depth_norm", "prad_srad_ratio", "a_scaled",
+            "g_r", "r_i", "j_h", "dur_period_ratio",
+            # habitability
+            "stellar_lum", "d_center", "d_inner", "d_outer", "habitable_zone",
+        ]
+        keep = [c for c in base if c in df.columns]
+        cols = keep + ["target"]
+        return df[cols]
 
     def preprocess_data(self, df, target_column="target", fit=True):
         """
-        Preprocess data with cleaning, imputation, scaling, and one-hot encoding.
-        
-        Args:
-            df: Input DataFrame
-            target_column: Name of the target column
-            fit: Whether to fit transformers (True for training, False for prediction)
-            
         Returns:
-            Preprocessed features (X) and target (y)
+            X_scaled: np.ndarray
+            y: np.ndarray or None
+            hz: pd.Series aligned with X (habitable_zone flag)
         """
         print("\nPreprocessing data...")
 
-        # Separate features and target
+        # Engineering + HZ
+        df = add_engineered_features(df)
+        df = add_habitability(df)
+
+        # Restrict to safe features
+        df = self.select_safe_features(df)
+
+        # Separate target
         if target_column in df.columns:
             y = df[target_column].values
-            X = df.drop(columns=[target_column, "koi_disposition"], errors="ignore")
+            feats = df.drop(columns=[target_column])
         else:
             y = None
-            X = df.drop(columns=["koi_disposition"], errors="ignore")
+            feats = df.copy()
 
-        # Remove columns with all missing values
-        X = X.dropna(axis=1, how="all")
+        # Keep HZ flag for reporting
+        hz = feats["habitable_zone"].fillna(0).astype(int) if "habitable_zone" in feats.columns else pd.Series(np.zeros(len(feats), dtype=int))
+        # Remove columns with all NaN
+        feats = feats.dropna(axis=1, how="all")
 
-        # Identify categorical and numerical features
+        # Type splits
         if fit:
-            self.categorical_features = X.select_dtypes(
-                include=["object", "category"]
-            ).columns.tolist()
-            self.numerical_features = X.select_dtypes(
-                include=["number"]
-            ).columns.tolist()
-            print(
-                f"Found {len(self.categorical_features)} categorical and {len(self.numerical_features)} numerical features"
-            )
+            self.categorical_features = feats.select_dtypes(include=["object", "category"]).columns.tolist()
+            self.numerical_features = feats.select_dtypes(include=["number"]).columns.tolist()
+            print(f"Using {len(self.numerical_features)} numerical and {len(self.categorical_features)} categorical features")
 
-        # Handle categorical features with label encoding
+        # Encode categoricals if any
+        X = feats.copy()
         for col in self.categorical_features:
-            if col in X.columns:
-                if fit:
-                    self.label_encoders[col] = LabelEncoder()
-                    # Handle missing values before encoding
-                    X[col] = X[col].fillna("missing")
-                    X[col] = self.label_encoders[col].fit_transform(X[col])
-                else:
-                    # Handle missing values before encoding
-                    X[col] = X[col].fillna("missing")
-                    # Handle unseen categories
-                    le = self.label_encoders[col]
-                    X[col] = X[col].apply(
-                        lambda x: le.transform([x])[0]
-                        if x in le.classes_
-                        else -1
-                    )
+            if fit:
+                le = LabelEncoder()
+                X[col] = le.fit_transform(X[col].fillna("missing"))
+                self.label_encoders[col] = le
+            else:
+                le = self.label_encoders[col]
+                X[col] = X[col].fillna("missing").apply(lambda v: le.transform([v])[0] if v in le.classes_ else -1)
 
-        # Impute missing values for numerical features
+        # Impute numerics
         if fit:
-            X[self.numerical_features] = self.imputer.fit_transform(
-                X[self.numerical_features]
-            )
+            X[self.numerical_features] = self.imputer.fit_transform(X[self.numerical_features])
         else:
-            X[self.numerical_features] = self.imputer.transform(
-                X[self.numerical_features]
-            )
+            X[self.numerical_features] = self.imputer.transform(X[self.numerical_features])
 
-        # Store feature names
         if fit:
             self.feature_names = X.columns.tolist()
 
-        # Scale numerical features
-        if fit:
-            X_scaled = self.scaler.fit_transform(X)
-        else:
-            X_scaled = self.scaler.transform(X)
+        # Scale
+        X_scaled = self.scaler.fit_transform(X) if fit else self.scaler.transform(X)
 
-        print(f"Preprocessed data shape: {X_scaled.shape}")
+        print(f"Preprocessed shape: {X_scaled.shape}")
+        return X_scaled, y, hz.reset_index(drop=True)
 
-        return X_scaled, y
+    # --------------------------- Training / CV ---------------------------
 
-    def monte_carlo_cross_validation(self, X, y, n_iterations=10, test_size=0.2):
-        """
-        Perform Monte Carlo cross-validation.
-        
-        Args:
-            X: Feature matrix
-            y: Target vector
-            n_iterations: Number of random train/test splits
-            test_size: Proportion of data for testing
-            
-        Returns:
-            Dictionary with average metrics for each classifier
-        """
-        print(f"\n{'=' * 80}")
-        print(
-            f"Starting Monte Carlo Cross-Validation ({n_iterations} iterations)..."
-        )
-        print(f"{'=' * 80}")
+    def monte_carlo_cv(self, X, y, n_iterations=10, test_size=0.8):
+        print(f"\n{'='*80}\nMonte Carlo Cross-Validation ({n_iterations} iterations)\n{'='*80}")
+        results = {name: {"accuracy": [], "precision": [], "recall": [], "f1": []} for name in self.classifiers.keys()}
 
-        results = {
-            name: {
-                "accuracy": [],
-                "precision": [],
-                "recall": [],
-                "f1": [],
-            }
-            for name in self.classifiers.keys()
-        }
-
-        for iteration in range(n_iterations):
-            print(f"\nIteration {iteration + 1}/{n_iterations}")
-            print("-" * 40)
-
-            # Random train/test split
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=self.random_state + iteration
-            )
-
-            # Train and evaluate each classifier
+        for i in range(n_iterations):
+            print(f"\nIteration {i+1}/{n_iterations}")
+            Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=test_size, stratify=y, random_state=None)
             for name, clf in self.classifiers.items():
-                clf_copy = clf.__class__(**clf.get_params())
-                clf_copy.fit(X_train, y_train)
-                y_pred = clf_copy.predict(X_test)
+                c = clf.__class__(**clf.get_params())
+                c.fit(Xtr, ytr)
+                yp = c.predict(Xte)
+                results[name]["accuracy"].append(accuracy_score(yte, yp))
+                results[name]["precision"].append(precision_score(yte, yp, zero_division=0))
+                results[name]["recall"].append(recall_score(yte, yp, zero_division=0))
+                results[name]["f1"].append(f1_score(yte, yp, zero_division=0))
 
-                results[name]["accuracy"].append(accuracy_score(y_test, y_pred))
-                results[name]["precision"].append(
-                    precision_score(y_test, y_pred, zero_division=0)
-                )
-                results[name]["recall"].append(
-                    recall_score(y_test, y_pred, zero_division=0)
-                )
-                results[name]["f1"].append(
-                    f1_score(y_test, y_pred, zero_division=0)
-                )
+        best_f1, best_name = -1, None
+        print(f"\n{'='*80}\nMC-CV Results (Average ± Std)\n{'='*80}")
+        for name, m in results.items():
+            acc = (np.mean(m["accuracy"]), np.std(m["accuracy"]))
+            pre = (np.mean(m["precision"]), np.std(m["precision"]))
+            rec = (np.mean(m["recall"]), np.std(m["recall"]))
+            f1  = (np.mean(m["f1"]), np.std(m["f1"]))
+            print(f"\n{name}:\n  Accuracy:  {acc[0]:.4f} ± {acc[1]:.4f}\n  Precision: {pre[0]:.4f} ± {pre[1]:.4f}\n  Recall:    {rec[0]:.4f} ± {rec[1]:.4f}\n  F1:        {f1[0]:.4f} ± {f1[1]:.4f}")
+            if f1[0] > best_f1:
+                best_f1, best_name = f1[0], name
 
-        # Calculate and display average results
-        print(f"\n{'=' * 80}")
-        print("Monte Carlo Cross-Validation Results (Average ± Std)")
-        print(f"{'=' * 80}")
-
-        for name, metrics in results.items():
-            print(f"\n{name}:")
-            for metric_name, values in metrics.items():
-                mean_val = np.mean(values)
-                std_val = np.std(values)
-                print(f"  {metric_name.capitalize()}: {mean_val:.4f} ± {std_val:.4f}")
-
-        # Find best classifier based on F1 score
-        best_f1 = 0
-        best_name = None
-        for name, metrics in results.items():
-            mean_f1 = np.mean(metrics["f1"])
-            if mean_f1 > best_f1:
-                best_f1 = mean_f1
-                best_name = name
-
-        print(f"\n{'=' * 80}")
-        print(f"Best classifier: {best_name} (F1: {best_f1:.4f})")
-        print(f"{'=' * 80}")
-
+        print(f"\nBest classifier: {best_name} (F1 {best_f1:.4f})")
         return results, best_name
 
     def train(self, X, y):
-        """
-        Train the two-stage classification system.
-        
-        Args:
-            X: Feature matrix
-            y: Target vector
-        """
-        print(f"\n{'=' * 80}")
-        print("Stage 1: Anomaly Detection with IsolationForest")
-        print(f"{'=' * 80}")
-
-        # Stage 1: Anomaly detection
-        print("Fitting IsolationForest...")
+        print(f"\n{'='*80}\nStage 1: IsolationForest\n{'='*80}")
         self.anomaly_detector.fit(X)
-        anomaly_predictions = self.anomaly_detector.predict(X)
+        mask = self.anomaly_detector.predict(X) == 1
+        Xf, yf = X[mask], y[mask]
+        print(f"Training data after filtering: {Xf.shape[0]} samples")
 
-        # Filter out anomalies (-1 means anomaly, 1 means normal)
-        normal_mask = anomaly_predictions == 1
-        X_filtered = X[normal_mask]
-        y_filtered = y[normal_mask]
-
-        n_anomalies = np.sum(~normal_mask)
-        print(f"Detected {n_anomalies} anomalies ({n_anomalies / len(X) * 100:.2f}%)")
-        print(f"Training data after filtering: {X_filtered.shape[0]} samples")
-
-        # Stage 2: Train classifiers with Monte Carlo cross-validation
-        print(f"\n{'=' * 80}")
-        print("Stage 2: Training Classifiers")
-        print(f"{'=' * 80}")
-
-        results, best_name = self.monte_carlo_cross_validation(
-            X_filtered, y_filtered, n_iterations=10
-        )
-
-        # Train best classifier on all filtered data
+        print(f"\n{'='*80}\nStage 2: Classifiers\n{'='*80}")
+        _, best_name = self.monte_carlo_cv(Xf, yf)
         self.best_classifier_name = best_name
         self.best_classifier = self.classifiers[best_name]
-        print(f"\nTraining final {best_name} model on all filtered data...")
-        self.best_classifier.fit(X_filtered, y_filtered)
-        print("Training complete!")
+        self.best_classifier.fit(Xf, yf)
+        print(f"Final model: {best_name}")
 
-        return results
+    def evaluate(self, X, y, hz_flag_test: pd.Series):
+        print(f"\n{'='*80}\nFinal Evaluation\n{'='*80}")
+        mask = self.anomaly_detector.predict(X) == 1
+        Xf, yf = X[mask], y[mask]
+        hz_f = hz_flag_test.iloc[mask.nonzero()[0]].reset_index(drop=True)
 
-    def evaluate(self, X, y):
-        """
-        Evaluate the trained model.
-        
-        Args:
-            X: Feature matrix
-            y: Target vector
-        """
-        print(f"\n{'=' * 80}")
-        print("Final Model Evaluation")
-        print(f"{'=' * 80}")
+        yp = self.best_classifier.predict(Xf)
+        print(classification_report(yf, yp, target_names=["Not Confirmed", "Confirmed"]))
+        print("Confusion Matrix:\n", confusion_matrix(yf, yp))
 
-        # Apply anomaly detection
-        anomaly_predictions = self.anomaly_detector.predict(X)
-        normal_mask = anomaly_predictions == 1
-        X_filtered = X[normal_mask]
-        y_filtered = y[normal_mask]
+        # ----------------- HZ stats -----------------
+        # True HZ among true planets
+        true_planets = (yf == 1)
+        n_true_planets = int(true_planets.sum())
+        n_true_hz_planets = int((true_planets & (hz_f == 1)).sum())
 
-        # Make predictions
-        y_pred = self.best_classifier.predict(X_filtered)
+        # Predicted HZ among predicted planets
+        pred_planets = (yp == 1)
+        n_pred_planets = int(pred_planets.sum())
+        n_pred_hz_planets = int((pred_planets & (hz_f == 1)).sum())
 
-        # Calculate metrics
-        accuracy = accuracy_score(y_filtered, y_pred)
-        precision = precision_score(y_filtered, y_pred, zero_division=0)
-        recall = recall_score(y_filtered, y_pred, zero_division=0)
-        f1 = f1_score(y_filtered, y_pred, zero_division=0)
+        print("\n" + "-"*80)
+        print("Habitable Zone Summary (test, after anomaly filtering)")
+        print("-"*80)
+        print(f"True CONFIRMED planets: {n_true_planets}")
+        print(f"  In HZ (true): {n_true_hz_planets}  -> { (n_true_hz_planets / n_true_planets * 100) if n_true_planets else 0:.2f}%")
+        print(f"Predicted planets:      {n_pred_planets}")
+        print(f"  In HZ (pred):  {n_pred_hz_planets}  -> { (n_pred_hz_planets / n_pred_planets * 100) if n_pred_planets else 0:.2f}%")
 
-        print(f"\nBest Model: {self.best_classifier_name}")
-        print(f"Accuracy:  {accuracy:.4f}")
-        print(f"Precision: {precision:.4f}")
-        print(f"Recall:    {recall:.4f}")
-        print(f"F1-Score:  {f1:.4f}")
+        # Return counts for programmatic use if needed
+        return {
+            "true_planets": n_true_planets,
+            "true_hz_planets": n_true_hz_planets,
+            "pred_planets": n_pred_planets,
+            "pred_hz_planets": n_pred_hz_planets,
+        }
 
-        print("\nClassification Report:")
-        print(classification_report(y_filtered, y_pred, target_names=["Not Confirmed", "Confirmed"]))
+    def save_models(self, outdir="models"):
+        os.makedirs(outdir, exist_ok=True)
+        joblib.dump(self.scaler, os.path.join(outdir, "scaler.pkl"))
+        joblib.dump(self.imputer, os.path.join(outdir, "imputer.pkl"))
+        joblib.dump(self.label_encoders, os.path.join(outdir, "label_encoders.pkl"))
+        joblib.dump(self.anomaly_detector, os.path.join(outdir, "anomaly.pkl"))
+        joblib.dump(self.best_classifier, os.path.join(outdir, "clf.pkl"))
+        joblib.dump({"name": self.best_classifier_name}, os.path.join(outdir, "clf_name.pkl"))
+        print("Models saved to", outdir)
 
-        print("\nConfusion Matrix:")
-        cm = confusion_matrix(y_filtered, y_pred)
-        print(cm)
 
-    def save_models(self, output_dir="models"):
-        """
-        Save trained models and preprocessors.
-        
-        Args:
-            output_dir: Directory to save models
-        """
-        os.makedirs(output_dir, exist_ok=True)
-
-        print(f"\nSaving models to '{output_dir}' directory...")
-
-        # Save preprocessors
-        joblib.dump(self.scaler, os.path.join(output_dir, "scaler.pkl"))
-        joblib.dump(self.imputer, os.path.join(output_dir, "imputer.pkl"))
-        joblib.dump(
-            self.label_encoders, os.path.join(output_dir, "label_encoders.pkl")
-        )
-
-        # Save feature information
-        joblib.dump(
-            {
-                "feature_names": self.feature_names,
-                "categorical_features": self.categorical_features,
-                "numerical_features": self.numerical_features,
-            },
-            os.path.join(output_dir, "feature_info.pkl"),
-        )
-
-        # Save anomaly detector
-        joblib.dump(
-            self.anomaly_detector, os.path.join(output_dir, "anomaly_detector.pkl")
-        )
-
-        # Save best classifier
-        joblib.dump(
-            self.best_classifier, os.path.join(output_dir, "best_classifier.pkl")
-        )
-        joblib.dump(
-            {"name": self.best_classifier_name},
-            os.path.join(output_dir, "best_classifier_name.pkl"),
-        )
-
-        print("Models saved successfully!")
-
-    def load_models(self, model_dir="models"):
-        """
-        Load trained models and preprocessors.
-        
-        Args:
-            model_dir: Directory containing saved models
-        """
-        print(f"Loading models from '{model_dir}' directory...")
-
-        # Load preprocessors
-        self.scaler = joblib.load(os.path.join(model_dir, "scaler.pkl"))
-        self.imputer = joblib.load(os.path.join(model_dir, "imputer.pkl"))
-        self.label_encoders = joblib.load(
-            os.path.join(model_dir, "label_encoders.pkl")
-        )
-
-        # Load feature information
-        feature_info = joblib.load(os.path.join(model_dir, "feature_info.pkl"))
-        self.feature_names = feature_info["feature_names"]
-        self.categorical_features = feature_info["categorical_features"]
-        self.numerical_features = feature_info["numerical_features"]
-
-        # Load anomaly detector
-        self.anomaly_detector = joblib.load(
-            os.path.join(model_dir, "anomaly_detector.pkl")
-        )
-
-        # Load best classifier
-        self.best_classifier = joblib.load(
-            os.path.join(model_dir, "best_classifier.pkl")
-        )
-        self.best_classifier_name = joblib.load(
-            os.path.join(model_dir, "best_classifier_name.pkl")
-        )["name"]
-
-        print(f"Models loaded successfully! Best classifier: {self.best_classifier_name}")
-
+# ---------------------------------- Main ---------------------------------------
 
 def main():
-    """Main training function."""
-    print("=" * 80)
-    print("Exoplanet Classification Training Pipeline")
-    print("=" * 80)
+    print("="*80)
+    print("Exoplanet Classification Training Pipeline (Astrophysical Features + HZ)")
+    print("="*80)
 
-    # Configuration
     DATA_FILE = "cumulative_2025.10.03_09.12.20.csv"
     MODEL_DIR = "models"
-    RANDOM_STATE = 42
 
-    # Check if data file exists
     if not os.path.exists(DATA_FILE):
-        print(f"\nError: Data file '{DATA_FILE}' not found!")
-        print("Please place the data file in the current directory.")
+        print("Error: data file not found.")
         return
 
-    # Initialize classifier
-    classifier = ExoplanetClassifier(random_state=RANDOM_STATE)
+    clf = ExoplanetClassifier()
+    df = clf.load_data(DATA_FILE)
+    df = clf.prepare_target(df)
 
-    # Load data
-    df = classifier.load_data(DATA_FILE)
+    # Full-dataset HZ ratio on ground truth (for reference)
+    df_hz_view = add_habitability(df)
+    total_true_planets = int((df_hz_view["koi_disposition"] == "CONFIRMED").sum())
+    total_true_hz = int(((df_hz_view["koi_disposition"] == "CONFIRMED") & (df_hz_view["habitable_zone"] == 1)).sum())
+    print("\n--- Global HZ among true CONFIRMED (full dataset) ---")
+    print(f"Total true planets: {total_true_planets}")
+    print(f"In HZ (true):       {total_true_hz}  -> {(total_true_hz / total_true_planets * 100) if total_true_planets else 0:.2f}%")
 
-    # Prepare target
-    df = classifier.prepare_target(df)
+    # Preprocess
+    X, y, hz = clf.preprocess_data(df, fit=True)
 
-    # Preprocess data
-    X, y = classifier.preprocess_data(df, fit=True)
-
-    # Split data for training and final evaluation
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=RANDOM_STATE
+    # Split
+    Xtr, Xte, ytr, yte, hz_tr, hz_te = train_test_split(
+        X, y, hz, test_size=0.8, stratify=y, random_state=None
     )
+    print(f"\nTraining set {Xtr.shape[0]}, Test set {Xte.shape[0]}")
 
-    print(f"\nTraining set: {X_train.shape[0]} samples")
-    print(f"Test set: {X_test.shape[0]} samples")
+    # Train + eval
+    clf.train(Xtr, ytr)
+    hz_counts = clf.evaluate(Xte, yte, hz_te)
 
-    # Train models
-    results = classifier.train(X_train, y_train)
+    # Save
+    clf.save_models(MODEL_DIR)
+    print("="*80, "\nTraining complete!")
 
-    # Evaluate on test set
-    classifier.evaluate(X_test, y_test)
-
-    # Save models
-    classifier.save_models(MODEL_DIR)
-
-    print(f"\n{'=' * 80}")
-    print("Training Complete!")
-    print(f"{'=' * 80}")
+    # Print compact return-like summary
+    print("\nSummary counts (test, after anomaly filtering):")
+    print(hz_counts)
 
 
 if __name__ == "__main__":

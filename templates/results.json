@@ -1,28 +1,28 @@
 {
-  "generated_at": "2025-10-04T12:09:12.069326Z",
+  "generated_at": "2025-10-04T14:28:49.350402Z",
   "summary": {
-    "average_precision": 0.8849410157331243,
-    "total_samples": 1913,
-    "filtered_samples": 1771,
-    "confirmed_predictions": 716,
-    "hz_candidates": 2,
-    "anomalies_detected": 142,
-    "f1_score": 0.7968253968253968,
-    "precision": 0.7011173184357542,
-    "recall": 0.9227941176470589,
-    "accuracy": 0.8554488989271598,
-    "positive_rate": 0.28698379508625194
+    "average_precision": 0.9008776181849256,
+    "total_samples": 957,
+    "filtered_samples": 868,
+    "confirmed_predictions": 351,
+    "hz_candidates": 1,
+    "anomalies_detected": 89,
+    "f1_score": 0.8218298555377207,
+    "precision": 0.7293447293447294,
+    "recall": 0.9411764705882353,
+    "accuracy": 0.8721198156682027,
+    "positive_rate": 0.28735632183908044
   },
   "model_overview": {
     "name": "HistGB",
     "metrics": {
-      "average_precision": 0.8849410157331243,
-      "f1_score": 0.7968253968253968,
-      "precision": 0.7011173184357542,
-      "recall": 0.9227941176470589,
-      "accuracy": 0.8554488989271598,
-      "threshold": 0.1777271163468868,
-      "threshold_hz": 0.8555163533091856
+      "average_precision": 0.9008776181849256,
+      "f1_score": 0.8218298555377207,
+      "precision": 0.7293447293447294,
+      "recall": 0.9411764705882353,
+      "accuracy": 0.8721198156682027,
+      "threshold": 0.2571539530700679,
+      "threshold_hz": 0.8774603863156709
     }
   },
   "performance": {
@@ -30,58 +30,55 @@
       "HistGB"
     ],
     "ap_scores": [
-      0.8849410157331243
+      0.9008776181849256
     ],
     "f1_scores": [
-      0.7968253968253968
+      0.8218298555377207
     ],
     "precision_scores": [
-      0.7011173184357542
+      0.7293447293447294
     ],
     "recall_scores": [
-      0.9227941176470589
+      0.9411764705882353
     ],
     "accuracy_scores": [
-      0.8554488989271598
+      0.8721198156682027
     ],
     "thresholds": [
-      0.1777271163468868
+      0.2571539530700679
     ],
     "thresholds_hz": [
-      0.8555163533091856
+      0.8774603863156709
     ]
   },
   "hz_planets": {
     "true": [
-      "Kepler-452 b",
-      "Kepler-1704 b",
-      "Kepler-712 c",
-      "Kepler-440 b"
+      "Kepler-440 b",
+      "Kepler-452 b"
     ],
     "predicted": [
-      "K02926.05",
       "Kepler-440 b"
     ],
     "counts": {
-      "true_planets": 544,
-      "predicted_planets": 716,
-      "true_hz_planets": 4,
-      "predicted_hz_planets": 2
+      "true_planets": 272,
+      "predicted_planets": 351,
+      "true_hz_planets": 2,
+      "predicted_hz_planets": 1
     }
   },
   "confusion_matrix": {
-    "true_negative": 1013,
-    "false_positive": 214,
-    "false_negative": 42,
-    "true_positive": 502
+    "true_negative": 501,
+    "false_positive": 95,
+    "false_negative": 16,
+    "true_positive": 256
   },
   "training_info": {
     "best_model": "HistGB",
-    "threshold": 0.178,
-    "threshold_hz": 0.856,
-    "train_samples": 7651,
-    "test_samples": 1913,
-    "filtered_samples": 1771,
+    "threshold": 0.257,
+    "threshold_hz": 0.877,
+    "train_samples": 8607,
+    "test_samples": 957,
+    "filtered_samples": 868,
     "target_distribution": {
       "class_0": 6818,
       "class_1": 2746
@@ -89,18 +86,10 @@
   },
   "predictions": [
     {
-      "name": "Kepler-20 c",
+      "name": "Kepler-531 b",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9944301049510623,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-523 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9921103577183692,
+      "confidence": 1.0,
       "hz": false,
       "anomaly": false
     },
@@ -108,23 +97,23 @@
       "name": "Kepler-517 b",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9912823121910435,
+      "confidence": 1.0,
       "hz": false,
       "anomaly": false
     },
     {
-      "name": "Kepler-20 b",
+      "name": "Kepler-648 b",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9894320827112882,
+      "confidence": 1.0,
       "hz": false,
       "anomaly": false
     },
     {
-      "name": "Kepler-531 b",
+      "name": "Kepler-480 b",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9893992619212395,
+      "confidence": 1.0,
       "hz": false,
       "anomaly": false
     },
@@ -132,143 +121,15 @@
       "name": "Kepler-324 c",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9891790693842336,
+      "confidence": 1.0,
       "hz": false,
       "anomaly": false
     },
     {
-      "name": "Kepler-68 b",
+      "name": "Kepler-20 c",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9890932567482118,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-1710 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9887945791820816,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-396 c",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9876069360350072,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-181 c",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9867722555060688,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-334 c",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9866571320219435,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-496 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9865761541025185,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-555 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9859270089694077,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-6 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9855088741707437,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-95 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9839983816031409,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-902 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9837004368198564,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-477 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9833371869988473,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-491 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9832493485546504,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-519 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9832013476208442,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-513 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9827511739265146,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-226 c",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9816863139687202,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-62 b",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9813347922313059,
-      "hz": false,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-82 e",
-      "prediction": "CONFIRMED",
-      "actual": "CONFIRMED",
-      "confidence": 0.9803717314350568,
+      "confidence": 1.0,
       "hz": false,
       "anomaly": false
     },
@@ -276,7 +137,63 @@
       "name": "Kepler-1312 b",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9797309075241962,
+      "confidence": 0.9965277777777778,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-81 c",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9965277777777778,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-181 c",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9965277777777778,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-523 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9965277777777778,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-246 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9965277777777778,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-62 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9965277777777778,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-534 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9965277777777778,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-43 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9965277777777778,
       "hz": false,
       "anomaly": false
     },
@@ -284,41 +201,105 @@
       "name": "Kepler-192 c",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9796583114561002,
+      "confidence": 0.9965277777777778,
       "hz": false,
       "anomaly": false
     },
     {
-      "name": "K02926.05",
+      "name": "Kepler-496 b",
       "prediction": "CONFIRMED",
-      "actual": "NOT_CONFIRMED",
-      "confidence": 0.9481543957387837,
-      "hz": true,
+      "actual": "CONFIRMED",
+      "confidence": 0.9965277777777778,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-210 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9925925925925926,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-191 c",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9925925925925926,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-28 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9925925925925926,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-736 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9873417721518987,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-296 d",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9873417721518987,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-82 e",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9873417721518987,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-1020 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9873417721518987,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-1525 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9838695499296765,
+      "hz": false,
+      "anomaly": false
+    },
+    {
+      "name": "Kepler-112 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9838695499296765,
+      "hz": false,
       "anomaly": false
     },
     {
       "name": "Kepler-440 b",
       "prediction": "CONFIRMED",
       "actual": "CONFIRMED",
-      "confidence": 0.9702776122175546,
+      "confidence": 0.8977591036414565,
       "hz": true,
       "anomaly": false
     }
   ],
   "detailed_predictions": [
     {
-      "Object Name": "Kepler-20 c",
+      "Object Name": "Kepler-531 b",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9944301049510623,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-523 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9921103577183692,
+      "Confidence": 1.0,
       "Habitable Zone": false,
       "Anomaly": false
     },
@@ -326,23 +307,23 @@
       "Object Name": "Kepler-517 b",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9912823121910435,
+      "Confidence": 1.0,
       "Habitable Zone": false,
       "Anomaly": false
     },
     {
-      "Object Name": "Kepler-20 b",
+      "Object Name": "Kepler-648 b",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9894320827112882,
+      "Confidence": 1.0,
       "Habitable Zone": false,
       "Anomaly": false
     },
     {
-      "Object Name": "Kepler-531 b",
+      "Object Name": "Kepler-480 b",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9893992619212395,
+      "Confidence": 1.0,
       "Habitable Zone": false,
       "Anomaly": false
     },
@@ -350,143 +331,15 @@
       "Object Name": "Kepler-324 c",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9891790693842336,
+      "Confidence": 1.0,
       "Habitable Zone": false,
       "Anomaly": false
     },
     {
-      "Object Name": "Kepler-68 b",
+      "Object Name": "Kepler-20 c",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9890932567482118,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-1710 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9887945791820816,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-396 c",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9876069360350072,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-181 c",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9867722555060688,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-334 c",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9866571320219435,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-496 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9865761541025185,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-555 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9859270089694077,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-6 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9855088741707437,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-95 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9839983816031409,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-902 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9837004368198564,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-477 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9833371869988473,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-491 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9832493485546504,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-519 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9832013476208442,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-513 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9827511739265146,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-226 c",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9816863139687202,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-62 b",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9813347922313059,
-      "Habitable Zone": false,
-      "Anomaly": false
-    },
-    {
-      "Object Name": "Kepler-82 e",
-      "Prediction": "CONFIRMED",
-      "Actual": "CONFIRMED",
-      "Confidence": 0.9803717314350568,
+      "Confidence": 1.0,
       "Habitable Zone": false,
       "Anomaly": false
     },
@@ -494,7 +347,63 @@
       "Object Name": "Kepler-1312 b",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9797309075241962,
+      "Confidence": 0.9965277777777778,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-81 c",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9965277777777778,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-181 c",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9965277777777778,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-523 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9965277777777778,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-246 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9965277777777778,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-62 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9965277777777778,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-534 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9965277777777778,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-43 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9965277777777778,
       "Habitable Zone": false,
       "Anomaly": false
     },
@@ -502,23 +411,95 @@
       "Object Name": "Kepler-192 c",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9796583114561002,
+      "Confidence": 0.9965277777777778,
       "Habitable Zone": false,
       "Anomaly": false
     },
     {
-      "Object Name": "K02926.05",
+      "Object Name": "Kepler-496 b",
       "Prediction": "CONFIRMED",
-      "Actual": "NOT_CONFIRMED",
-      "Confidence": 0.9481543957387837,
-      "Habitable Zone": true,
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9965277777777778,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-210 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9925925925925926,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-191 c",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9925925925925926,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-28 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9925925925925926,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-736 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9873417721518987,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-296 d",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9873417721518987,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-82 e",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9873417721518987,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-1020 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9873417721518987,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-1525 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9838695499296765,
+      "Habitable Zone": false,
+      "Anomaly": false
+    },
+    {
+      "Object Name": "Kepler-112 b",
+      "Prediction": "CONFIRMED",
+      "Actual": "CONFIRMED",
+      "Confidence": 0.9838695499296765,
+      "Habitable Zone": false,
       "Anomaly": false
     },
     {
       "Object Name": "Kepler-440 b",
       "Prediction": "CONFIRMED",
       "Actual": "CONFIRMED",
-      "Confidence": 0.9702776122175546,
+      "Confidence": 0.8977591036414565,
       "Habitable Zone": true,
       "Anomaly": false
     }

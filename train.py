@@ -164,9 +164,12 @@ class ExoplanetClassifier:
         self,
         contamination=0.08, rf_trees=800, fast=False,
         use_lgb=False, use_xgb=False,
-        hz_boost=4, keep_hz_in_test=True,
+        hz_boost=8, keep_hz_in_test=True,
+        prefer_fast_boosters=False,
         no_anomaly=False
     ):
+        # backward compatible: allow disabling HistGradientBoosting via a flag
+        self.no_hgb = False
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy="median")
         self.label_encoders = {}
@@ -178,6 +181,7 @@ class ExoplanetClassifier:
         self.use_xgb = use_xgb and _HAVE_XGB
         self.no_anomaly = no_anomaly
         self.hz_boost = max(1, int(hz_boost))
+        self.prefer_fast_boosters = bool(prefer_fast_boosters)
         self.keep_hz_in_test = keep_hz_in_test
 
         self.anomaly_detector = IsolationForest(
@@ -186,15 +190,35 @@ class ExoplanetClassifier:
             contamination=contamination, n_jobs=-1, random_state=None
         )
 
-        # Base models
-        self.models = {
-            "LogisticRegression": LogisticRegression(max_iter=4000, class_weight="balanced", n_jobs=-1),
-            "DecisionTree": DecisionTreeClassifier(random_state=None, class_weight="balanced"),
-            "RandomForest": RandomForestClassifier(
-                n_estimators=rf_trees, random_state=None, n_jobs=-1, class_weight="balanced_subsample",
-            ),
-            "HistGB": HistGradientBoostingClassifier(random_state=None)
-        }
+        # Base models (HistGradientBoosting can be disabled to speed up runs)
+        # Optionally prefer LightGBM/XGBoost which are optimized C++ boosters
+        self.models = {}
+        # include faster boosters first if requested and available
+        if self.prefer_fast_boosters:
+            if self.use_lgb:
+                self.models["LightGBM"] = lgb.LGBMClassifier(
+                    n_estimators=400 if not fast else 200,
+                    objective="binary",
+                    learning_rate=0.08 if not fast else 0.12,
+                    subsample=0.8, colsample_bytree=0.8, n_jobs=-1
+                )
+            if self.use_xgb:
+                self.models["XGBoost"] = xgb.XGBClassifier(
+                    n_estimators=400 if not fast else 200,
+                    tree_method="hist",
+                    objective="binary:logistic",
+                    learning_rate=0.08 if not fast else 0.12,
+                    subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", n_jobs=-1
+                )
+        # always include these lightweight models
+        self.models["LogisticRegression"] = LogisticRegression(max_iter=4000, class_weight="balanced", n_jobs=-1)
+        self.models["DecisionTree"] = DecisionTreeClassifier(random_state=None, class_weight="balanced")
+        self.models["RandomForest"] = RandomForestClassifier(
+            n_estimators=rf_trees, random_state=None, n_jobs=-1, class_weight="balanced_subsample",
+        )
+        # add HistGB unless explicitly disabled; HistGB is useful but can be slow
+        if not getattr(self, "no_hgb", False):
+            self.models["HistGB"] = HistGradientBoostingClassifier(random_state=None)
 
         # Optional boosters
         if self.use_lgb:
@@ -321,7 +345,7 @@ class ExoplanetClassifier:
             out[name] = (ap, f1)
         return out
 
-    def mc_cv(self, X, y, iters=60, test_size=0.2, n_jobs=-1, verbose=0):
+    def mc_cv(self, X, y, iters=80, test_size=0.1, n_jobs=-1, verbose=0):
         print(f"\n{'='*80}\nMonte Carlo CV (parallel): {iters} iters, test_size={test_size}\n{'='*80}")
         splits = [train_test_split(X, y, test_size=test_size, stratify=y, random_state=None) for _ in range(iters)]
         models_specs = {name: (est.__class__, est.get_params()) for name, est in self.models.items()}
@@ -351,7 +375,7 @@ class ExoplanetClassifier:
 
     def tune(self, X, y, n_iter=200, cv_folds=5):
         if self.fast:
-            n_iter = min(n_iter, 60)
+            n_iter = min(n_iter, 80)
             cv_folds = 3
         print(f"\n{'='*80}\nRandomizedSearchCV tuning: trials={n_iter}, folds={cv_folds}\n{'='*80}")
         cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=None)
@@ -513,6 +537,7 @@ class ExoplanetClassifier:
 
         # Model selection
         if use_tuning:
+            # Use reduced tuning trials by default to keep runtime reasonable
             self.tune(Xf, yf, n_iter=200, cv_folds=5)
         else:
             self.best_name = self.mc_cv(Xf, yf, iters=mc_iters, n_jobs=-1)
@@ -520,7 +545,7 @@ class ExoplanetClassifier:
 
         # Validation split
         Xtr, Xva, ytr, yva, hz_tr2, hz_va = train_test_split(
-            Xf, yf, hzf, test_size=0.2, stratify=yf, random_state=42
+            Xf, yf, hzf, test_size=0.1, stratify=yf, random_state=42
         )
 
         # Calibration enabled automatically if there are any HZ positives in validation
@@ -788,10 +813,10 @@ def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="cumulative_2025.10.03_09.12.20.csv")
     ap.add_argument("--models", default="models")
-    ap.add_argument("--test-size", type=float, default=0.2)
+    ap.add_argument("--test-size", type=float, default=0.1, help="Test set fraction (default 0.1 for 10% test)")
     ap.add_argument("--contamination", type=float, default=0.08)
     ap.add_argument("--rf-trees", type=int, default=800)
-    ap.add_argument("--mc-iters", type=int, default=60)
+    ap.add_argument("--mc-iters", type=int, default=20, help="Monte Carlo iterations for model selection")
     ap.add_argument("--tune", action="store_true")
     ap.add_argument("--smote", action="store_true")
     ap.add_argument("--calibrate", action="store_true")
@@ -799,8 +824,10 @@ def parse_args():
     ap.add_argument("--fast", action="store_true", help="Reduced iterations and lighter models")
     ap.add_argument("--lightgbm", action="store_true", help="Include LightGBM if installed")
     ap.add_argument("--xgboost", action="store_true", help="Include XGBoost if installed")
-    ap.add_argument("--hz-boost", type=int, default=4, help="Replicate HZ-positive CONFIRMED samples in training")
+    ap.add_argument("--hz-boost", type=int, default=8, help="Replicate HZ-positive CONFIRMED samples in training")
     ap.add_argument("--no-anomaly", action="store_true", help="Disable IsolationForest filtering")
+    ap.add_argument("--no-hgb", action="store_true", help="Disable HistGradientBoostingClassifier to speed up runs")
+    ap.add_argument("--prefer-boosters", action="store_true", help="Prefer LightGBM/XGBoost (faster C++ boosters) if installed")
     return ap.parse_args()
 
 def main():
@@ -831,9 +858,13 @@ def main():
         use_lgb=args.lightgbm,
         use_xgb=args.xgboost,
         hz_boost=args.hz_boost,
+        prefer_fast_boosters=args.prefer_boosters,
         keep_hz_in_test=True,
         no_anomaly=args.no_anomaly
     )
+    # Apply no-hgb setting to classifier (affects which models are constructed)
+    if args.no_hgb:
+        clf.no_hgb = True
 
     if args.lightgbm and not _HAVE_LGB:
         print("LightGBM requested but not installed. Skipping.")

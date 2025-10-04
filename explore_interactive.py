@@ -146,7 +146,8 @@ def compute_permutation_importance(df, out):
     Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
     model = HistGradientBoostingClassifier(random_state=42)
     model.fit(Xtr, ytr)
-    r = permutation_importance(model, Xte, yte, n_repeats=10, random_state=42, n_jobs=1)
+    # Increase repeats for more stable importances
+    r = permutation_importance(model, Xte, yte, n_repeats=120, random_state=42, n_jobs=1)
     importances = pd.Series(r.importances_mean, index=cols).sort_values(ascending=False)
     fig = px.bar(x=importances.values, y=importances.index, orientation='h', title='Permutation importance')
     fig.update_layout(xaxis_title='Importance', yaxis_title='Feature')
@@ -165,7 +166,8 @@ def plot_partial_dependence(df, out, features=3):
     model.fit(X, y)
 
     # We'll compute PDP manually: vary each feature across a grid and average model predictions
-    n_grid = 50
+    # Denser grid for smoother PDP curves
+    n_grid = 250
     features_idx = list(range(min(features, len(cols))))
     for fi in features_idx:
         f_name = cols[fi]
@@ -194,7 +196,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--data', default='cumulative_2025.10.03_09.12.20.csv')
     ap.add_argument('--outdir', default='exploration/interactive')
-    ap.add_argument('--sample', type=float, default=0.2)
+    ap.add_argument('--sample', type=float, default=0.7)
     ap.add_argument('--cell-size', type=int, default=220, help='Size in pixels of each scatter matrix cell')
     args = ap.parse_args()
 

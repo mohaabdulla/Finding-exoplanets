@@ -4,17 +4,19 @@ Exoplanet classification with:
 - Feature engineering + Habitable Zone (HZ) flag
 - IsolationForest anomaly filter
 - Optional SMOTE oversampling for imbalance
-- Monte Carlo CV (default 60 iterations) with PR-AUC + F1
-- Hyperparameter tuning (RandomizedSearchCV, default 200 trials)
+- Monte Carlo CV with PR-AUC + F1 (parallelized with joblib)
+- Hyperparameter tuning (RandomizedSearchCV)
 - Optional probability calibration (isotonic)
 - Threshold tuning to maximize F1
 - Optional soft-voting ensemble
 - Prints ONLY planet names that are in the HZ
 - FAST mode to reduce runtime
+- Optional fast classifiers: LightGBM or XGBoost
 
 Run examples:
-  python train.py --tune --mc-iters 100 --contamination 0.06 --rf-trees 800 --smote --calibrate --ensemble
   python train.py --fast
+  python train.py --lightgbm --tune --mc-iters 24
+  python train.py --xgboost --tune --mc-iters 24
 """
 
 import os
@@ -22,6 +24,7 @@ import argparse
 import warnings
 import numpy as np
 import pandas as pd
+
 from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
@@ -32,9 +35,24 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from scipy.stats import randint, loguniform
+from joblib import Parallel, delayed
 import joblib
 
 warnings.filterwarnings("ignore")
+
+# ----------------------------- Optional libs -----------------------------------
+try:
+    import lightgbm as lgb  # type: ignore
+    _HAVE_LGB = True
+except Exception:
+    _HAVE_LGB = False
+
+try:
+    import xgboost as xgb  # type: ignore
+    _HAVE_XGB = True
+except Exception:
+    _HAVE_XGB = False
+
 
 # ----------------------------- Feature engineering -----------------------------
 
@@ -89,9 +107,6 @@ def add_habitability(df: pd.DataFrame) -> pd.DataFrame:
 def threshold_search(y_true, y_proba, metric="f1"):
     ps, rs, th = precision_recall_curve(y_true, y_proba)
     f1s = 2 * ps[:-1] * rs[:-1] / (ps[:-1] + rs[:-1] + 1e-12)
-    if metric == "f1":
-        i = np.nanargmax(f1s)
-        return float(th[i]), float(f1s[i]), float(ps[i]), float(rs[i])
     i = np.nanargmax(f1s)
     return float(th[i]), float(f1s[i]), float(ps[i]), float(rs[i])
 
@@ -111,10 +126,11 @@ def extract_name_series(df: pd.DataFrame) -> pd.Series:
             return s
     return pd.Series([f"obj_{i}" for i in range(len(df))], index=df.index)
 
+
 # ------------------------------- Classifier ------------------------------------
 
 class ExoplanetClassifier:
-    def __init__(self, contamination=0.08, rf_trees=800, fast=False):
+    def __init__(self, contamination=0.08, rf_trees=800, fast=False, use_lgb=False, use_xgb=False):
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy="median")
         self.label_encoders = {}
@@ -122,6 +138,8 @@ class ExoplanetClassifier:
         self.categorical_features = []
         self.numerical_features = []
         self.fast = fast
+        self.use_lgb = use_lgb and _HAVE_LGB
+        self.use_xgb = use_xgb and _HAVE_XGB
 
         self.anomaly_detector = IsolationForest(
             n_estimators=100 if fast else 200,
@@ -129,6 +147,7 @@ class ExoplanetClassifier:
             contamination=contamination, n_jobs=-1, random_state=None
         )
 
+        # Base models
         self.models = {
             "LogisticRegression": LogisticRegression(max_iter=4000, class_weight="balanced", n_jobs=-1),
             "DecisionTree": DecisionTreeClassifier(random_state=None, class_weight="balanced"),
@@ -137,6 +156,26 @@ class ExoplanetClassifier:
             ),
             "HistGB": HistGradientBoostingClassifier(random_state=None)
         }
+
+        # Faster gradient boosters
+        if self.use_lgb:
+            self.models["LightGBM"] = lgb.LGBMClassifier(
+                n_estimators=600 if not fast else 300,
+                objective="binary",
+                learning_rate=0.05 if not fast else 0.08,
+                subsample=0.8, colsample_bytree=0.8,
+                n_jobs=-1
+            )
+        if self.use_xgb:
+            self.models["XGBoost"] = xgb.XGBClassifier(
+                n_estimators=600 if not fast else 300,
+                tree_method="hist",
+                objective="binary:logistic",
+                learning_rate=0.05 if not fast else 0.08,
+                subsample=0.8, colsample_bytree=0.8,
+                eval_metric="logloss",
+                n_jobs=-1
+            )
 
         if fast:
             self.models.pop("DecisionTree", None)
@@ -225,28 +264,46 @@ class ExoplanetClassifier:
         hz = hz.reset_index(drop=True)
         return Z, y, hz, names
 
-    # --------------------------- Monte Carlo CV --------------------------
+    # --------------------------- Monte Carlo CV (parallel) ----------------------
 
-    def mc_cv(self, X, y, iters=60, test_size=0.2):
-        print(f"\n{'='*80}\nMonte Carlo CV: {iters} iters, test_size={test_size}\n{'='*80}")
-        scores = {k: {"ap":[], "f1":[]} for k in self.models}
+    @staticmethod
+    def _eval_split(models_specs, Xtr, Xte, ytr, yte):
+        out = {}
+        for name, (cls, params) in models_specs.items():
+            m = cls(**params)
+            m.fit(Xtr, ytr)
+            if hasattr(m, "predict_proba"):
+                p = m.predict_proba(Xte)[:, 1]
+            else:
+                # XGB/LGB/HistGB have predict_proba; fallback remains
+                p = m.predict(Xte)
+            ap = average_precision_score(yte, p)
+            _, f1, _, _ = threshold_search(yte, p, metric="f1")
+            out[name] = (ap, f1)
+        return out
+
+    def mc_cv(self, X, y, iters=60, test_size=0.2, n_jobs=-1, verbose=0):
+        print(f"\n{'='*80}\nMonte Carlo CV (parallel): {iters} iters, test_size={test_size}\n{'='*80}")
+
         splits = [train_test_split(X, y, test_size=test_size, stratify=y, random_state=None) for _ in range(iters)]
+        # Freeze specs so workers construct fresh estimators
+        models_specs = {name: (est.__class__, est.get_params()) for name, est in self.models.items()}
 
-        for Xtr, Xte, ytr, yte in splits:
-            for name, base in self.models.items():
-                m = base.__class__(**base.get_params())
-                m.fit(Xtr, ytr)
-                p = m.predict_proba(Xte)[:,1] if hasattr(m, "predict_proba") else m.predict(Xte)
-                ap = average_precision_score(yte, p)
-                thr, f1, _, _ = threshold_search(yte, p, metric="f1")
+        results = Parallel(n_jobs=n_jobs, verbose=verbose)(
+            delayed(self._eval_split)(models_specs, Xtr, Xte, ytr, yte) for (Xtr, Xte, ytr, yte) in splits
+        )
+
+        scores = {name: {"ap": [], "f1": []} for name in self.models}
+        for res in results:
+            for name, (ap, f1) in res.items():
                 scores[name]["ap"].append(ap)
                 scores[name]["f1"].append(f1)
 
         best, best_name = -1, None
         print(f"\n{'='*80}\nMC-CV summary (mean ± std)\n{'='*80}")
         for name, d in scores.items():
-            ap_mu, ap_sd = np.mean(d["ap"]), np.std(d["ap"])
-            f1_mu, f1_sd = np.mean(d["f1"]), np.std(d["f1"])
+            ap_mu, ap_sd = float(np.mean(d["ap"])), float(np.std(d["ap"]))
+            f1_mu, f1_sd = float(np.mean(d["f1"])), float(np.std(d["f1"]))
             print(f"{name:18s} AP={ap_mu:.4f}±{ap_sd:.4f}  F1={f1_mu:.4f}±{f1_sd:.4f}")
             if f1_mu > best:
                 best, best_name = f1_mu, name
@@ -293,8 +350,35 @@ class ExoplanetClassifier:
             }
         }
 
+        if self.use_lgb:
+            spaces["LightGBM"] = {
+                "n_estimators": randint(200, 1200),
+                "num_leaves": randint(16, 256),
+                "max_depth": randint(-1, 24),
+                "learning_rate": loguniform(1e-2, 2e-1),
+                "min_child_samples": randint(5, 50),
+                "subsample": loguniform(0.5, 1.0),
+                "colsample_bytree": loguniform(0.5, 1.0),
+                "reg_alpha": loguniform(1e-4, 1.0),
+                "reg_lambda": loguniform(1e-4, 1.0),
+            }
+        if self.use_xgb:
+            spaces["XGBoost"] = {
+                "n_estimators": randint(200, 1200),
+                "max_depth": randint(3, 16),
+                "learning_rate": loguniform(1e-2, 2e-1),
+                "min_child_weight": randint(1, 12),
+                "subsample": loguniform(0.5, 1.0),
+                "colsample_bytree": loguniform(0.5, 1.0),
+                "reg_alpha": loguniform(1e-4, 1.0),
+                "reg_lambda": loguniform(1e-4, 1.0),
+            }
+
         best_name, best_score, best_est = None, -1, None
         for name, base in self.models.items():
+            if name not in spaces:
+                print(f"\nSkipping tuning for {name} (no search space).")
+                continue
             print(f"\nTuning {name} ...")
             rs = RandomizedSearchCV(
                 estimator=base,
@@ -308,9 +392,14 @@ class ExoplanetClassifier:
             if rs.best_score_ > best_score:
                 best_name, best_score, best_est = name, rs.best_score_, rs.best_estimator_
 
+        if best_est is None:
+            # Fall back to MC-CV winner if nothing tuned
+            best_name = self.mc_cv(X, y, iters=12 if self.fast else 30)
+            best_est = self.models[best_name]
+
         self.best_name = best_name
         self.best_estimator = best_est
-        print(f"\nBest tuned: {best_name}  AP={best_score:.4f}")
+        print(f"\nBest tuned: {best_name}")
 
     # --------------------------- Train / Evaluate ------------------------
 
@@ -339,7 +428,7 @@ class ExoplanetClassifier:
         if use_tuning:
             self.tune(Xf, yf, n_iter=200, cv_folds=5)
         else:
-            self.best_name = self.mc_cv(Xf, yf, iters=mc_iters)
+            self.best_name = self.mc_cv(Xf, yf, iters=mc_iters, n_jobs=-1)
             self.best_estimator = self.models[self.best_name]
 
         Xtr, Xva, ytr, yva = train_test_split(Xf, yf, test_size=0.2, stratify=yf, random_state=None)
@@ -352,23 +441,30 @@ class ExoplanetClassifier:
 
         if ensemble and not self.fast:
             print("\nBuilding soft-voting ensemble...")
-            m_rf = self.models["RandomForest"].__class__(**self.models["RandomForest"].get_params())
-            m_lr = self.models["LogisticRegression"].__class__(**self.models["LogisticRegression"].get_params())
-            m_hg = self.models["HistGB"].__class__(**self.models["HistGB"].get_params())
-            ens = VotingClassifier(estimators=[("rf", m_rf),("lr", m_lr),("hgb", m_hg)], voting="soft", n_jobs=-1)
-            ens.fit(Xf, yf)
-            p_ens = ens.predict_proba(Xva)[:,1]
-            ap_ens = average_precision_score(yva, p_ens)
-            ap_best = average_precision_score(yva, proba_va)
-            if ap_ens >= ap_best:
-                self.best_estimator = ens
-                proba_va = p_ens
-                thr, f1, p, r = threshold_search(yva, proba_va, metric="f1")
-                self.best_threshold = max(0.05, min(0.95, thr))
-                self.best_name = "SoftVotingEnsemble"
-                print(f"Ensemble selected. Val AP={ap_ens:.4f}. New threshold={self.best_threshold:.3f}")
-            else:
-                print(f"Kept tuned single model. Val AP={ap_best:.4f}")
+            # pick fast members present
+            estims = []
+            if "RandomForest" in self.models:
+                estims.append(("rf", self.models["RandomForest"].__class__(**self.models["RandomForest"].get_params())))
+            if "LightGBM" in self.models:
+                estims.append(("lgb", self.models["LightGBM"].__class__(**self.models["LightGBM"].get_params())))
+            if "XGBoost" in self.models:
+                estims.append(("xgb", self.models["XGBoost"].__class__(**self.models["XGBoost"].get_params())))
+            if "HistGB" in self.models and not estims:
+                estims.append(("hgb", self.models["HistGB"].__class__(**self.models["HistGB"].get_params())))
+            if len(estims) >= 2:
+                ens = VotingClassifier(estimators=estims, voting="soft", n_jobs=-1)
+                ens.fit(Xf, yf)
+                p_ens = ens.predict_proba(Xva)[:, 1]
+                ap_ens = average_precision_score(yva, p_ens)
+                ap_best = average_precision_score(yva, proba_va)
+                if ap_ens >= ap_best:
+                    self.best_estimator = ens
+                    thr, f1, p, r = threshold_search(yva, p_ens, metric="f1")
+                    self.best_threshold = max(0.05, min(0.95, thr))
+                    self.best_name = "SoftVotingEnsemble"
+                    print(f"Ensemble selected. New threshold={self.best_threshold:.3f}")
+                else:
+                    print("Kept tuned single model.")
 
     def proba(self, X):
         if hasattr(self.best_estimator, "predict_proba"):
@@ -436,6 +532,7 @@ class ExoplanetClassifier:
         joblib.dump({"name": self.best_name, "threshold": self.best_threshold}, os.path.join(outdir, "model_meta.pkl"))
         print("Models saved to", outdir)
 
+
 # ---------------------------------- Main ---------------------------------------
 
 def parse_args():
@@ -451,6 +548,8 @@ def parse_args():
     ap.add_argument("--calibrate", action="store_true")
     ap.add_argument("--ensemble", action="store_true")
     ap.add_argument("--fast", action="store_true", help="Run with reduced iterations and lighter models for speed")
+    ap.add_argument("--lightgbm", action="store_true", help="Include LightGBM (if installed) as a fast classifier")
+    ap.add_argument("--xgboost", action="store_true", help="Include XGBoost (if installed) as a fast classifier")
     return ap.parse_args()
 
 def main():
@@ -466,16 +565,27 @@ def main():
 
     if args.fast:
         print("\nFAST MODE ENABLED: reduced iterations, lighter trees, no ensemble or calibration.\n")
-        args.mc_iters = 8
+        args.mc_iters = min(args.mc_iters, 12)
         args.rf_trees = min(args.rf_trees, 300)
-        args.tune = False if not args.tune else True
         args.smote = False
         args.calibrate = False
         args.ensemble = False
         os.environ.setdefault("OMP_NUM_THREADS", "1")
         os.environ.setdefault("MKL_NUM_THREADS", "1")
 
-    clf = ExoplanetClassifier(contamination=args.contamination, rf_trees=args.rf_trees, fast=args.fast)
+    clf = ExoplanetClassifier(
+        contamination=args.contamination,
+        rf_trees=args.rf_trees,
+        fast=args.fast,
+        use_lgb=args.lightgbm,
+        use_xgb=args.xgboost
+    )
+
+    # Inform about optional libs
+    if args.lightgbm and not _HAVE_LGB:
+        print("LightGBM requested but not installed. Skipping.")
+    if args.xgboost and not _HAVE_XGB:
+        print("XGBoost requested but not installed. Skipping.")
 
     df = clf.load(args.data)
     df = clf.targetize(df)
@@ -494,8 +604,14 @@ def main():
     )
     print(f"\nTrain {Xtr.shape[0]} | Test {Xte.shape[0]}")
 
-    clf.train(Xtr, ytr, use_tuning=args.tune, mc_iters=args.mc_iters,
-              use_smote=args.smote, calibrate=args.calibrate, ensemble=args.ensemble)
+    clf.train(
+        Xtr, ytr,
+        use_tuning=args.tune,
+        mc_iters=args.mc_iters,
+        use_smote=args.smote,
+        calibrate=args.calibrate,
+        ensemble=args.ensemble
+    )
 
     stats = clf.evaluate(Xte, yte, hz_te, names_te)
 

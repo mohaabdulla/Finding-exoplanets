@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exoplanet Classification Results</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <header>
+      <div class="container">
+        <div class="header-content">
+          <div class="logo">
+            <i class="fas fa-globe-americas"></i>
+            <div>
+              <h1>Exoplanet Classification Results</h1>
+              <div class="tagline">
+                Analysis of Kepler Data for Habitable Zone Candidates
+              </div>
+            </div>
+          </div>
+          <div class="header-actions">
+            <div id="lastUpdated"></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- Summary Metrics -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Average Precision</div>
+          <div class="metric-value" id="apValue">0.00</div>
+          <div class="metric-label">PR-AUC Score</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Total Samples</div>
+          <div class="metric-value" id="totalSamples">0</div>
+          <div class="metric-label">Analyzed Objects</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Confirmed Planets</div>
+          <div class="metric-value" id="confirmedValue">0</div>
+          <div class="metric-label">Predicted CONFIRMED</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">In Habitable Zone</div>
+          <div class="metric-value" id="hzValue">0</div>
+          <div class="metric-label">Potential Candidates</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Anomalies Detected</div>
+          <div class="metric-value" id="anomaliesValue">0</div>
+          <div class="metric-label">Filtered Out</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Model Performance</div>
+          <div class="metric-value" id="f1Value">0.00</div>
+          <div class="metric-label">F1 Score</div>
+        </div>
+      </div>
+
+      <!-- Performance Charts -->
+      <div class="chart-container">
+        <h3 class="card-title">
+          <i class="fas fa-chart-line"></i> Model Performance
+        </h3>
+        <canvas id="performanceChart" height="300"></canvas>
+      </div>
+
+      <!-- Habitable Zone Analysis -->
+      <div class="card">
+        <h3 class="card-title">
+          <i class="fas fa-globe-americas"></i> Habitable Zone Candidates
+        </h3>
+        <div class="hz-planets">
+          <div class="planet-list">
+            <h3><i class="fas fa-check-circle"></i> Confirmed HZ Planets</h3>
+            <div id="trueHzPlanets">
+              <!-- Will be populated with JavaScript -->
+            </div>
+          </div>
+          <div class="planet-list">
+            <h3><i class="fas fa-search"></i> Predicted HZ Planets</h3>
+            <div id="predictedHzPlanets">
+              <!-- Will be populated with JavaScript -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <div class="card">
+        <h3 class="card-title">
+          <i class="fas fa-table"></i> Detailed Predictions
+        </h3>
+        <div class="table-container">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Object Name</th>
+                <th>Prediction</th>
+                <th>Confidence</th>
+                <th>Habitable Zone</th>
+                <th>Anomaly</th>
+              </tr>
+            </thead>
+            <tbody id="resultsTableBody">
+              <!-- Will be populated with JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div class="container">
+        <p>
+          Exoplanet Classification System &copy; 2023 | Machine Learning for
+          Astronomical Discovery
+        </p>
+      </div>
+    </footer>
+    <script src="/static/script.js"></script>
+  </body>
+</html>

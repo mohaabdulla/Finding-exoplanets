@@ -63,6 +63,7 @@
           <div class="metric-label">Model Performance</div>
           <div class="metric-value" id="f1Value">0.00</div>
           <div class="metric-label">F1 Score</div>
+          <div class="metric-subtext" id="bestModelSummary">Model: --</div>
         </div>
       </div>
 
@@ -72,6 +73,42 @@
           <i class="fas fa-chart-line"></i> Model Performance
         </h3>
         <canvas id="performanceChart" height="300"></canvas>
+      </div>
+
+      <div class="card model-overview-card">
+        <h3 class="card-title">
+          <i class="fas fa-robot"></i> Current Model Overview
+        </h3>
+        <div class="model-overview-grid">
+          <div class="model-overview-item">
+            <div class="detail-label">Model</div>
+            <div class="detail-value" id="bestModelName">--</div>
+          </div>
+          <div class="model-overview-item">
+            <div class="detail-label">Precision</div>
+            <div class="detail-value" id="modelPrecision">0.000</div>
+          </div>
+          <div class="model-overview-item">
+            <div class="detail-label">Recall</div>
+            <div class="detail-value" id="modelRecall">0.000</div>
+          </div>
+          <div class="model-overview-item">
+            <div class="detail-label">Accuracy</div>
+            <div class="detail-value" id="modelAccuracy">0.000</div>
+          </div>
+          <div class="model-overview-item">
+            <div class="detail-label">Average Precision</div>
+            <div class="detail-value" id="modelAP">0.000</div>
+          </div>
+          <div class="model-overview-item">
+            <div class="detail-label">Threshold</div>
+            <div class="detail-value" id="modelThreshold">0.000</div>
+          </div>
+          <div class="model-overview-item">
+            <div class="detail-label">HZ Threshold</div>
+            <div class="detail-value" id="modelThresholdHz">0.000</div>
+          </div>
+        </div>
       </div>
 
       <!-- Habitable Zone Analysis -->
@@ -106,6 +143,7 @@
               <tr>
                 <th>Object Name</th>
                 <th>Prediction</th>
+                <th>Actual</th>
                 <th>Confidence</th>
                 <th>Habitable Zone</th>
                 <th>Anomaly</th>

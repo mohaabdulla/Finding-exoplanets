@@ -1,230 +1,273 @@
-// Sample data - Replace this with code to load your actual results
 const sampleData = {
+  generated_at: "2025-10-04T12:00:00Z",
   summary: {
-    average_precision: 0.892,
-    total_samples: 9562,
-    confirmed_predictions: 2147,
-    hz_candidates: 42,
-    anomalies_detected: 763,
-    f1_score: 0.874,
+    average_precision: 0.8888,
+    total_samples: 1913,
+    filtered_samples: 1772,
+    confirmed_predictions: 469,
+    hz_candidates: 3,
+    anomalies_detected: 141,
+    f1_score: 0.812,
+    precision: 0.775,
+    recall: 0.853,
+    accuracy: 0.887,
+    positive_rate: 0.291,
+  },
+  model_overview: {
+    name: "HistGradientBoostingClassifier",
+    metrics: {
+      average_precision: 0.8888,
+      f1_score: 0.812,
+      precision: 0.775,
+      recall: 0.853,
+      accuracy: 0.887,
+      threshold: 0.327,
+      threshold_hz: 0.327,
+    },
   },
   performance: {
-    models: [
-      "Logistic Regression",
-      "Decision Tree",
-      "Random Forest",
-      "HistGB",
-      "Ensemble",
-    ],
-    ap_scores: [0.72, 0.68, 0.89, 0.85, 0.91],
-    f1_scores: [0.7, 0.65, 0.87, 0.83, 0.9],
+    models: ["HistGradientBoostingClassifier"],
+    ap_scores: [0.8888],
+    f1_scores: [0.812],
+    accuracy_scores: [0.887],
+    precision_scores: [0.775],
+    recall_scores: [0.853],
+    thresholds: [0.327],
+    thresholds_hz: [0.327],
   },
   hz_planets: {
-    true: [
-      "Kepler-186f",
-      "Kepler-442b",
-      "Kepler-62f",
-      "Kepler-1229b",
-      "Kepler-1652b",
-      "Kepler-1544b",
-      "Kepler-296e",
-      "Kepler-1649c",
-    ],
-    predicted: [
-      "Kepler-186f",
-      "Kepler-442b",
-      "Kepler-62f",
-      "Kepler-1229b",
-      "Kepler-1652b",
-      "Kepler-1544b",
-      "Kepler-296e",
-      "Kepler-1649c",
-      "Kepler-452b",
-      "Kepler-1638b",
-    ],
+    true: ["Kepler-452 b", "Kepler-712 c", "Kepler-440 b"],
+    predicted: ["Kepler-440 b"],
+    counts: {
+      true_planets: 610,
+      predicted_planets: 469,
+      true_hz_planets: 3,
+      predicted_hz_planets: 1,
+    },
+  },
+  confusion_matrix: {
+    true_negative: 1072,
+    false_positive: 141,
+    false_negative: 77,
+    true_positive: 469,
+  },
+  training_info: {
+    best_model: "HistGradientBoostingClassifier",
+    threshold: 0.327,
+    threshold_hz: 0.327,
+    train_samples: 7651,
+    test_samples: 1913,
+    filtered_samples: 1772,
+    target_distribution: {
+      class_0: 6818,
+      class_1: 2746,
+    },
   },
   predictions: [
     {
-      name: "Kepler-186f",
+      name: "Kepler-452 b",
       prediction: "CONFIRMED",
-      confidence: 0.95,
+      actual: "CONFIRMED",
+      confidence: 0.9,
       hz: true,
       anomaly: false,
     },
     {
-      name: "Kepler-442b",
+      name: "Kepler-712 c",
       prediction: "CONFIRMED",
-      confidence: 0.92,
+      actual: "CONFIRMED",
+      confidence: 0.85,
+      hz: true,
+      anomaly: false,
+    },
+    {
+      name: "Kepler-440 b",
+      prediction: "CONFIRMED",
+      actual: "CONFIRMED",
+      confidence: 0.88,
+      hz: true,
+      anomaly: false,
+    },
+    {
+      name: "Kepler-186f",
+      prediction: "NOT_CONFIRMED",
+      actual: "CONFIRMED",
+      confidence: 0.41,
       hz: true,
       anomaly: false,
     },
     {
       name: "KIC 10255705",
       prediction: "NOT_CONFIRMED",
+      actual: "NOT_CONFIRMED",
       confidence: 0.15,
-      hz: false,
-      anomaly: false,
-    },
-    {
-      name: "Kepler-1229b",
-      prediction: "CONFIRMED",
-      confidence: 0.88,
-      hz: true,
-      anomaly: false,
-    },
-    {
-      name: "KIC 11026764",
-      prediction: "NOT_CONFIRMED",
-      confidence: 0.08,
-      hz: false,
-      anomaly: true,
-    },
-    {
-      name: "Kepler-1652b",
-      prediction: "CONFIRMED",
-      confidence: 0.91,
-      hz: true,
-      anomaly: false,
-    },
-    {
-      name: "Kepler-1544b",
-      prediction: "CONFIRMED",
-      confidence: 0.87,
-      hz: true,
-      anomaly: false,
-    },
-    {
-      name: "KIC 11442793",
-      prediction: "CONFIRMED",
-      confidence: 0.76,
       hz: false,
       anomaly: false,
     },
   ],
 };
 
-// Function to load data from a JSON file
+let performanceChart;
+
+function asNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function formatDecimal(value, digits = 3) {
+  return asNumber(value).toFixed(digits);
+}
+
+function formatPercent(value, digits = 1) {
+  return `${(asNumber(value) * 100).toFixed(digits)}%`;
+}
+
 async function loadData() {
   try {
-    // Try to load actual results from a JSON file
-    const response = await fetch("/results.json");
-    console.log(response);
-
+    const response = await fetch("/results.json", { cache: "no-store" });
     if (response.ok) {
       return await response.json();
-    } else {
-      console.log("No results.json found, using sample data");
-      return sampleData;
     }
+    console.warn("results.json not available, using sample data");
+    return sampleData;
   } catch (error) {
-    console.log("Error loading results, using sample data:", error);
+    console.warn("Error loading results, using sample data", error);
     return sampleData;
   }
 }
 
-// Function to update the UI with data
-function updateUI(data) {
-  // Update summary metrics
-  document.getElementById("apValue").textContent =
-    data.summary.average_precision.toFixed(3);
-  document.getElementById("totalSamples").textContent =
-    data.summary.total_samples.toLocaleString();
-  document.getElementById("confirmedValue").textContent =
-    data.summary.confirmed_predictions.toLocaleString();
-  document.getElementById("hzValue").textContent =
-    data.summary.hz_candidates.toLocaleString();
-  document.getElementById("anomaliesValue").textContent =
-    data.summary.anomalies_detected.toLocaleString();
-  document.getElementById("f1Value").textContent =
-    data.summary.f1_score.toFixed(3);
+function updateSummary(summary, metrics) {
+  const averagePrecision = summary.average_precision ?? metrics.average_precision ?? 0;
+  document.getElementById("apValue").textContent = formatDecimal(averagePrecision);
+  document.getElementById("totalSamples").textContent = asNumber(summary.total_samples).toLocaleString();
+  document.getElementById("confirmedValue").textContent = asNumber(summary.confirmed_predictions).toLocaleString();
+  document.getElementById("hzValue").textContent = asNumber(summary.hz_candidates).toLocaleString();
+  document.getElementById("anomaliesValue").textContent = asNumber(summary.anomalies_detected).toLocaleString();
 
-  // Update last updated time
-  document.getElementById(
-    "lastUpdated"
-  ).textContent = `Last updated: ${new Date().toLocaleDateString()}`;
+  const f1 = summary.f1_score ?? metrics.f1_score ?? 0;
+  document.getElementById("f1Value").textContent = formatDecimal(f1);
+}
 
-  // Update HZ planet lists
+function updateModelOverview(model) {
+  const metrics = model.metrics || {};
+  document.getElementById("bestModelSummary").textContent = `Model: ${model.name || "--"}`;
+  document.getElementById("bestModelName").textContent = model.name || "--";
+  document.getElementById("modelPrecision").textContent = formatDecimal(metrics.precision);
+  document.getElementById("modelRecall").textContent = formatDecimal(metrics.recall);
+  document.getElementById("modelAccuracy").textContent = formatDecimal(metrics.accuracy);
+  document.getElementById("modelAP").textContent = formatDecimal(metrics.average_precision);
+  document.getElementById("modelThreshold").textContent = formatDecimal(metrics.threshold, 3);
+  document.getElementById("modelThresholdHz").textContent = formatDecimal(metrics.threshold_hz, 3);
+}
+
+function updateHabitableZones(hzPlanets) {
   const trueHzContainer = document.getElementById("trueHzPlanets");
   const predictedHzContainer = document.getElementById("predictedHzPlanets");
-
   trueHzContainer.innerHTML = "";
   predictedHzContainer.innerHTML = "";
 
-  data.hz_planets.true.forEach((planet) => {
+  (hzPlanets?.true || []).forEach((planet) => {
     const planetItem = document.createElement("div");
     planetItem.className = "planet-item";
     planetItem.innerHTML = `<i class="fas fa-globe-americas"></i> ${planet}`;
     trueHzContainer.appendChild(planetItem);
   });
 
-  data.hz_planets.predicted.forEach((planet) => {
+  (hzPlanets?.predicted || []).forEach((planet) => {
     const planetItem = document.createElement("div");
     planetItem.className = "planet-item";
     planetItem.innerHTML = `<i class="fas fa-search"></i> ${planet}`;
     predictedHzContainer.appendChild(planetItem);
   });
+}
 
-  // Update results table
+function updatePredictionsTable(predictions) {
   const tableBody = document.getElementById("resultsTableBody");
   tableBody.innerHTML = "";
 
-  data.predictions.forEach((pred) => {
-    const row = document.createElement("tr");
+  if (!Array.isArray(predictions)) {
+    return;
+  }
 
-    const statusClass =
-      pred.prediction === "CONFIRMED"
-        ? "status-confirmed"
-        : "status-not-confirmed";
-    const anomalyClass = pred.anomaly ? "status-anomaly" : "";
-    const hzIcon = pred.hz
-      ? '<i class="fas fa-sun" style="color: #f39c12;"></i>'
-      : "";
+  predictions.forEach((pred) => {
+    const row = document.createElement("tr");
+    const statusClass = pred.prediction === "CONFIRMED" ? "status-confirmed" : "status-not-confirmed";
+    const anomalyClass = pred.anomaly ? "status-badge status-anomaly" : "";
+    const hzIcon = pred.hz ? '<i class="fas fa-sun" style="color: #f39c12;"></i>' : "";
+    const confidence = pred.confidence != null ? `${formatPercent(pred.confidence, 1)}` : "--";
 
     row.innerHTML = `
-                    <td>${pred.name}</td>
-                    <td><span class="status-badge ${statusClass}">${
-      pred.prediction
-    }</span></td>
-                    <td>${(pred.confidence * 100).toFixed(1)}%</td>
-                    <td>${hzIcon}</td>
-                    <td>${
-                      pred.anomaly
-                        ? '<span class="status-badge status-anomaly">ANOMALY</span>'
-                        : ""
-                    }</td>
-                `;
+      <td>${pred.name || "--"}</td>
+      <td><span class="status-badge ${statusClass}">${pred.prediction || "--"}</span></td>
+      <td>${pred.actual || "--"}</td>
+      <td>${confidence}</td>
+      <td>${hzIcon}</td>
+      <td>${pred.anomaly ? '<span class="status-badge status-anomaly">ANOMALY</span>' : ""}</td>
+    `;
 
     tableBody.appendChild(row);
   });
-
-  // Create performance chart
-  createPerformanceChart(data.performance);
 }
 
-// Function to create performance chart
-function createPerformanceChart(performanceData) {
-  const ctx = document.getElementById("performanceChart").getContext("2d");
+function updateLastUpdated(timestamp) {
+  const node = document.getElementById("lastUpdated");
+  if (!node) return;
+  if (!timestamp) {
+    node.textContent = `Last updated: ${new Date().toLocaleString()}`;
+    return;
+  }
+  const dt = new Date(timestamp);
+  if (Number.isNaN(dt.getTime())) {
+    node.textContent = `Last updated: ${new Date().toLocaleString()}`;
+  } else {
+    node.textContent = `Last updated: ${dt.toLocaleString()}`;
+  }
+}
 
-  new Chart(ctx, {
+function createPerformanceChart(performance) {
+  const ctx = document.getElementById("performanceChart").getContext("2d");
+  if (performanceChart) {
+    performanceChart.destroy();
+    performanceChart = null;
+  }
+
+  const labels = performance?.models || [];
+  if (labels.length === 0) {
+    return;
+  }
+
+  const datasets = [
+    {
+      label: "Average Precision",
+      data: performance.ap_scores || [],
+      backgroundColor: "#3498db",
+      borderColor: "#2980b9",
+      borderWidth: 1,
+    },
+    {
+      label: "F1 Score",
+      data: performance.f1_scores || [],
+      backgroundColor: "#9b59b6",
+      borderColor: "#8e44ad",
+      borderWidth: 1,
+    },
+  ];
+
+  if (performance.accuracy_scores && performance.accuracy_scores.length === labels.length) {
+    datasets.push({
+      label: "Accuracy",
+      data: performance.accuracy_scores,
+      backgroundColor: "#2ecc71",
+      borderColor: "#27ae60",
+      borderWidth: 1,
+    });
+  }
+
+  performanceChart = new Chart(ctx, {
     type: "bar",
     data: {
-      labels: performanceData.models,
-      datasets: [
-        {
-          label: "Average Precision",
-          data: performanceData.ap_scores,
-          backgroundColor: "#3498db",
-          borderColor: "#2980b9",
-          borderWidth: 1,
-        },
-        {
-          label: "F1 Score",
-          data: performanceData.f1_scores,
-          backgroundColor: "#9b59b6",
-          borderColor: "#8e44ad",
-          borderWidth: 1,
-        },
-      ],
+      labels,
+      datasets,
     },
     options: {
       responsive: true,
@@ -251,8 +294,17 @@ function createPerformanceChart(performanceData) {
   });
 }
 
-// Initialize the page when loaded
-window.addEventListener("DOMContentLoaded", async () => {
+async function initializeDashboard() {
   const data = await loadData();
-  updateUI(data);
-});
+  const summary = data.summary || {};
+  const modelOverview = data.model_overview || { metrics: {} };
+
+  updateSummary(summary, modelOverview.metrics || {});
+  updateModelOverview(modelOverview);
+  updateHabitableZones(data.hz_planets || {});
+  updatePredictionsTable(data.predictions);
+  updateLastUpdated(data.generated_at);
+  createPerformanceChart(data.performance);
+}
+
+window.addEventListener("DOMContentLoaded", initializeDashboard);

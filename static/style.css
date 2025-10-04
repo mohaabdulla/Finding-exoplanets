@@ -236,3 +236,41 @@ footer {
     grid-template-columns: 1fr;
   }
 }
+
+
+.metric-subtext {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-top: 6px;
+}
+
+.model-overview-card {
+  margin-bottom: 25px;
+}
+
+.model-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 15px;
+}
+
+.model-overview-item {
+  background: var(--light);
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.detail-label {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-top: 8px;
+}

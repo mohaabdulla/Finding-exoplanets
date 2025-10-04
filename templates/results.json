@@ -1,69 +1,129 @@
 {
+  "generated_at": "2025-10-04T12:00:00Z",
   "summary": {
-    "average_precision": 0.8802,
-    "total_samples": 9564,
-    "confirmed_predictions": 650,
+    "average_precision": 0.8888,
+    "total_samples": 1913,
+    "filtered_samples": 1772,
+    "confirmed_predictions": 469,
     "hz_candidates": 3,
-    "anomalies_detected": 163,
-    "f1_score": 0.8162,
-    "precision": 0.75,
-    "recall": 0.8952,
-    "accuracy": 0.88,
-    "positive_rate": 0.2871
+    "anomalies_detected": 141,
+    "f1_score": 0.812,
+    "precision": 0.775,
+    "recall": 0.853,
+    "accuracy": 0.887,
+    "positive_rate": 0.291
+  },
+  "model_overview": {
+    "name": "HistGradientBoostingClassifier",
+    "metrics": {
+      "average_precision": 0.8888,
+      "f1_score": 0.812,
+      "precision": 0.775,
+      "recall": 0.853,
+      "accuracy": 0.887,
+      "threshold": 0.327,
+      "threshold_hz": 0.327
+    }
   },
   "performance": {
-    "models": ["LogisticRegression", "DecisionTree", "RandomForest", "HistGB"],
-    "ap_scores": [0.7919, 0.6019, 0.8808, 0.8868],
-    "f1_scores": [0.7669, 0.7166, 0.8125, 0.8213]
+    "models": [
+      "HistGradientBoostingClassifier"
+    ],
+    "ap_scores": [
+      0.8888
+    ],
+    "f1_scores": [
+      0.812
+    ],
+    "accuracy_scores": [
+      0.887
+    ],
+    "precision_scores": [
+      0.775
+    ],
+    "recall_scores": [
+      0.853
+    ],
+    "thresholds": [
+      0.327
+    ],
+    "thresholds_hz": [
+      0.327
+    ]
   },
   "hz_planets": {
-    "true": ["Kepler-712 c", "Kepler-1362 b", "Kepler-442 b"],
-    "predicted": ["Kepler-1362 b", "unknown", "Kepler-442 b"]
+    "true": [
+      "Kepler-452 b",
+      "Kepler-712 c",
+      "Kepler-440 b"
+    ],
+    "predicted": [
+      "Kepler-440 b"
+    ],
+    "counts": {
+      "true_planets": 610,
+      "predicted_planets": 469,
+      "true_hz_planets": 3,
+      "predicted_hz_planets": 1
+    }
   },
   "confusion_matrix": {
-    "true_negative": 1045,
-    "false_positive": 159,
-    "false_negative": 55,
-    "true_positive": 491
+    "true_negative": 1072,
+    "false_positive": 141,
+    "false_negative": 77,
+    "true_positive": 469
   },
   "training_info": {
-    "best_model": "HistGB",
-    "threshold": 0.281,
+    "best_model": "HistGradientBoostingClassifier",
+    "threshold": 0.327,
+    "threshold_hz": 0.327,
     "train_samples": 7651,
     "test_samples": 1913,
-    "filtered_samples": 7039,
+    "filtered_samples": 1772,
     "target_distribution": {
       "class_0": 6818,
       "class_1": 2746
     }
   },
-  "predictions_sample": [
+  "predictions": [
+    {
+      "name": "Kepler-452 b",
+      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.9,
+      "hz": true,
+      "anomaly": false
+    },
     {
       "name": "Kepler-712 c",
       "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
       "confidence": 0.85,
       "hz": true,
       "anomaly": false
     },
     {
-      "name": "Kepler-1362 b",
+      "name": "Kepler-440 b",
       "prediction": "CONFIRMED",
-      "confidence": 0.92,
-      "hz": true,
-      "anomaly": false
-    },
-    {
-      "name": "Kepler-442 b",
-      "prediction": "CONFIRMED",
+      "actual": "CONFIRMED",
       "confidence": 0.88,
       "hz": true,
       "anomaly": false
     },
     {
-      "name": "unknown",
-      "prediction": "CONFIRMED",
-      "confidence": 0.76,
+      "name": "Kepler-186f",
+      "prediction": "NOT_CONFIRMED",
+      "actual": "CONFIRMED",
+      "confidence": 0.41,
       "hz": true,
+      "anomaly": false
+    },
+    {
+      "name": "KIC 10255705",
+      "prediction": "NOT_CONFIRMED",
+      "actual": "NOT_CONFIRMED",
+      "confidence": 0.15,
+      "hz": false,
       "anomaly": false
     }
   ]

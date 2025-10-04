@@ -2,21 +2,21 @@
 Exoplanet classification with:
 - Safe astrophysical features only
 - Feature engineering + Habitable Zone (HZ) flag
-- IsolationForest anomaly filter (protects HZ positives) or --no-anomaly
+- IsolationForest anomaly filter (train-time HZ protection; test-time never drops HZ rows)
 - Optional SMOTE oversampling for imbalance
+- HZ-boost: replicate HZ-positive CONFIRMED samples in training
 - Monte Carlo CV with PR-AUC + F1 (parallel via joblib)
 - Hyperparameter tuning (RandomizedSearchCV)
-- Optional probability calibration (isotonic)
-- Threshold tuning: F1 by default; --recall-first uses F2 + dual thresholds (HZ vs non-HZ)
-- Optional soft-voting ensemble
-- Prints ONLY planet names that are in the HZ
+- Probability calibration (isotonic) auto-enabled when HZ recall needs help
+- Dual thresholds (HZ vs non-HZ). Auto-tuned to guarantee 100% HZ recall on validation
+- Optional soft-voting and weight search focused on HZ recall
+- Prints ONLY HZ planet names
 - FAST mode to reduce runtime
-- Optional fast classifiers: LightGBM or XGBoost
 
 Examples:
   python train.py --fast
-  python train.py --recall-first --no-anomaly
-  python train.py --lightgbm --tune --mc-iters 24
+  python train.py --hz-boost 6 --smote --tune --ensemble
+  python train.py --no-anomaly
 """
 
 import os
@@ -30,8 +30,10 @@ import pandas as pd
 from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import classification_report, confusion_matrix, average_precision_score, precision_score, recall_score, f1_score, accuracy_score
-from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import (
+    classification_report, confusion_matrix, average_precision_score,
+    precision_score, recall_score, f1_score, accuracy_score, precision_recall_curve
+)
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, HistGradientBoostingClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
@@ -106,15 +108,8 @@ def add_habitability(df: pd.DataFrame) -> pd.DataFrame:
 
 # ------------------------------- Utilities -------------------------------------
 
-def threshold_search(y_true, y_proba, beta=1.0, target_recall=None):
-    """Return threshold, best_score, precision, recall. If target_recall set, pick last threshold hitting it."""
+def threshold_search(y_true, y_proba, beta=1.0):
     p, r, th = precision_recall_curve(y_true, y_proba)
-    if target_recall is not None:
-        idx = np.where(r >= target_recall)[0]
-        if len(idx):
-            j = idx[-1]
-            best = (1 + beta**2) * p[j] * r[j] / (beta**2 * p[j] + r[j] + 1e-12)
-            return float(th[j-1] if j > 0 else 0.0), float(best), float(p[j]), float(r[j])
     fbeta = (1 + beta**2) * p[:-1] * r[:-1] / (beta**2 * p[:-1] + r[:-1] + 1e-12)
     j = np.nanargmax(fbeta)
     return float(th[j]), float(fbeta[j]), float(p[j]), float(r[j])
@@ -165,7 +160,13 @@ def extract_name_series(df: pd.DataFrame) -> pd.Series:
 # ------------------------------- Classifier ------------------------------------
 
 class ExoplanetClassifier:
-    def __init__(self, contamination=0.08, rf_trees=800, fast=False, use_lgb=False, use_xgb=False, recall_first=False, no_anomaly=False):
+    def __init__(
+        self,
+        contamination=0.08, rf_trees=800, fast=False,
+        use_lgb=False, use_xgb=False,
+        hz_boost=4, keep_hz_in_test=True,
+        no_anomaly=False
+    ):
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy="median")
         self.label_encoders = {}
@@ -175,8 +176,9 @@ class ExoplanetClassifier:
         self.fast = fast
         self.use_lgb = use_lgb and _HAVE_LGB
         self.use_xgb = use_xgb and _HAVE_XGB
-        self.recall_first = recall_first
         self.no_anomaly = no_anomaly
+        self.hz_boost = max(1, int(hz_boost))
+        self.keep_hz_in_test = keep_hz_in_test
 
         self.anomaly_detector = IsolationForest(
             n_estimators=100 if fast else 200,
@@ -194,7 +196,7 @@ class ExoplanetClassifier:
             "HistGB": HistGradientBoostingClassifier(random_state=None)
         }
 
-        # Faster boosters
+        # Optional boosters
         if self.use_lgb:
             self.models["LightGBM"] = lgb.LGBMClassifier(
                 n_estimators=600 if not fast else 300,
@@ -220,9 +222,9 @@ class ExoplanetClassifier:
 
         self.best_name = None
         self.best_estimator = None
-        self.best_threshold = 0.5
-        self.best_threshold_hz = 0.5  # dual threshold for HZ rows
-        self._hz_train = None  # filled after split
+        self.best_threshold = 0.5         # non-HZ
+        self.best_threshold_hz = 0.5      # HZ-only
+        self._hz_train = None             # set after split
 
     # --------------------------- Data handling ---------------------------
 
@@ -311,12 +313,11 @@ class ExoplanetClassifier:
         for name, (cls, params) in models_specs.items():
             m = cls(**params)
             m.fit(Xtr, ytr)
-            if hasattr(m, "predict_proba"):
-                p = m.predict_proba(Xte)[:, 1]
-            else:
-                p = m.predict(Xte)
+            p = m.predict_proba(Xte)[:, 1] if hasattr(m, "predict_proba") else m.predict(Xte)
             ap = average_precision_score(yte, p)
-            _, f1, _, _ = threshold_search(yte, p, beta=1.0)
+            th, _, _, _ = threshold_search(yte, p, beta=1.0)
+            preds = (p >= th).astype(int)
+            f1 = f1_score(yte, preds, zero_division=0)
             out[name] = (ap, f1)
         return out
 
@@ -329,7 +330,6 @@ class ExoplanetClassifier:
             delayed(self._eval_split)(models_specs, Xtr, Xte, ytr, yte) for (Xtr, Xte, ytr, yte) in splits
         )
 
-        # FIX: build scores dict without using undefined 'name'
         scores = {model_name: {"ap": [], "f1": []} for model_name in self.models}
         for res in results:
             for model_name, (ap, f1) in res.items():
@@ -439,30 +439,42 @@ class ExoplanetClassifier:
 
     # --------------------------- Train / Evaluate ------------------------
 
-    def tune_dual_threshold(self, y_va, p_va, hz_va, base_thr):
-        """Lower threshold for HZ rows to include all true HZ positives on validation."""
-        thr_nonhz = base_thr
-        thr_hz = base_thr
+    def _hz_replication(self, X, y, hz, factor):
+        """Replicate rows where y==1 and hz==1."""
+        mask = (y == 1) & (hz == 1)
+        if not np.any(mask) or factor <= 1:
+            return X, y, hz
+        idx = np.where(mask)[0]
+        reps = [idx for _ in range(factor - 1)]
+        if not reps:
+            return X, y, hz
+        idx_rep = np.concatenate(reps, axis=0)
+        X_aug = np.vstack([X, X[idx_rep]])
+        y_aug = np.concatenate([y, y[idx_rep]])
+        hz_aug = np.concatenate([hz, hz[idx_rep]])
+        return X_aug, y_aug, hz_aug
+
+    def _dual_threshold_from_validation(self, y_va, p_va, hz_va, base_beta=2.0):
+        """Guarantee HZ recall=1.0 on validation."""
+        th_nonhz, _, _, _ = threshold_search(y_va, p_va, beta=base_beta)
+        th_hz = th_nonhz
         pos_hz = (y_va == 1) & (hz_va == 1)
         if np.any(pos_hz):
             min_pos = np.min(p_va[pos_hz])
-            thr_hz = max(0.01, float(min_pos) - 1e-6)
-        return float(thr_hz), float(thr_nonhz)
+            th_hz = max(0.01, float(min_pos) - 1e-6)
+        return float(th_hz), float(th_nonhz)
 
-    def fit_final(self, Xtr, ytr, use_calibration=False, hz_tr=None):
+    def fit_final(self, Xtr, ytr, hz_tr, use_calibration):
         est = self.best_estimator
+        # strong upweight for HZ positives
+        w = np.ones_like(ytr, dtype=float)
+        w[(ytr == 1) & (hz_tr == 1)] *= 6.0
         if use_calibration:
             est = CalibratedClassifierCV(est, method="isotonic", cv=3)
             self.best_estimator = est
-
-        hz_arr = None if hz_tr is None else np.asarray(hz_tr)
         fit_kwargs = {}
-        if hz_arr is not None:
-            w = np.ones_like(ytr, dtype=float)
-            w[(ytr == 1) & (hz_arr == 1)] *= 3.0
-            if "sample_weight" in est.fit.__code__.co_varnames:
-                fit_kwargs["sample_weight"] = w
-
+        if "sample_weight" in est.fit.__code__.co_varnames:
+            fit_kwargs["sample_weight"] = w
         est.fit(Xtr, ytr, **fit_kwargs)
 
     def train(self, X, y, hz, use_tuning=True, mc_iters=60, use_smote=False, calibrate=False, ensemble=False):
@@ -475,81 +487,82 @@ class ExoplanetClassifier:
             self.anomaly_detector.fit(X)
             mask_if = (self.anomaly_detector.predict(X) == 1)
 
-        if self._hz_train is not None:
-            protect = ((y == 1) & (np.asarray(self._hz_train) == 1))
-            mask_if = np.logical_or(mask_if, protect)
-            print(f"Protected HZ positives in train: {int(protect.sum())}")
+        # Protect HZ-confirmed positives from being dropped
+        self._hz_train = np.asarray(hz)
+        protect = ((y == 1) & (self._hz_train == 1))
+        mask_if = np.logical_or(mask_if, protect)
+        print(f"Protected HZ positives in train: {int(protect.sum())}")
 
-        hz = np.asarray(hz, dtype=int)
-
-        Xf, yf, hzf = X[mask_if], y[mask_if], hz[mask_if]
+        Xf, yf, hzf = X[mask_if], y[mask_if], self._hz_train[mask_if]
         print(f"After filtering: {Xf.shape[0]} / {X.shape[0]} samples")
 
+        # Optional SMOTE
         if use_smote:
             SMOTE = try_import_smote()
             if SMOTE is not None:
                 print("Applying SMOTE oversampling...")
                 sm = SMOTE(random_state=None)
                 Xf, yf = sm.fit_resample(Xf, yf)
+                # hzf cannot be resampled by SMOTE; keep original hzf proportions for thresholds on val
                 print("Post-SMOTE:", Xf.shape, "Pos rate:", float(yf.mean()))
             else:
                 print("SMOTE not available. Skipping.")
 
+        # HZ replication (always applied; controls via --hz-boost)
+        Xf, yf, hzf = self._hz_replication(Xf, yf, hzf, self.hz_boost)
+
+        # Model selection
         if use_tuning:
             self.tune(Xf, yf, n_iter=200, cv_folds=5)
         else:
             self.best_name = self.mc_cv(Xf, yf, iters=mc_iters, n_jobs=-1)
             self.best_estimator = self.models[self.best_name]
 
+        # Validation split
         Xtr, Xva, ytr, yva, hz_tr2, hz_va = train_test_split(
             Xf, yf, hzf, test_size=0.2, stratify=yf, random_state=42
         )
-        self.fit_final(Xtr, ytr, use_calibration=calibrate and not self.fast, hz_tr=hz_tr2)
 
-        proba_va = self.proba(Xva)
+        # Calibration enabled automatically if there are any HZ positives in validation
+        auto_cal = calibrate or (np.any((yva == 1) & (hz_va == 1)))
+        self.fit_final(Xtr, ytr, hz_tr2, use_calibration=auto_cal and not self.fast)
 
-        if self.recall_first:
-            thr, _, _, _ = threshold_search(yva, proba_va, beta=2.0)
-            thr_hz, thr_nonhz = self.tune_dual_threshold(yva, proba_va, np.asarray(hz_va), base_thr=thr)
-            self.best_threshold_hz = np.clip(thr_hz, 0.01, 0.95)
-            self.best_threshold = np.clip(thr_nonhz, 0.01, 0.95)
-            print(f"Tuned thresholds (recall-first): HZ={self.best_threshold_hz:.3f}  non-HZ={self.best_threshold:.3f}")
-        else:
-            thr, best, p, r = threshold_search(yva, proba_va, beta=1.0)
-            self.best_threshold = np.clip(thr, 0.01, 0.95)
-            self.best_threshold_hz = self.best_threshold
-            print(f"Tuned threshold (F1): {self.best_threshold:.3f}  (val score={best:.4f}, P={p:.4f}, R={r:.4f})")
+        # Thresholds: force HZ recall = 1.0 on validation
+        p_va = self.proba(Xva)
+        th_hz, th_nonhz = self._dual_threshold_from_validation(yva, p_va, hz_va, base_beta=2.0)
+        self.best_threshold_hz = np.clip(th_hz, 0.01, 0.95)
+        self.best_threshold = np.clip(th_nonhz, 0.01, 0.95)
 
+        # Optional soft-voting ensemble with simple weight search focusing HZ recall
         if ensemble and not self.fast:
-            print("\nBuilding soft-voting ensemble...")
-            estims = []
-            if "RandomForest" in self.models:
-                estims.append(("rf", self.models["RandomForest"].__class__(**self.models["RandomForest"].get_params())))
-            if "LightGBM" in self.models:
-                estims.append(("lgb", self.models["LightGBM"].__class__(**self.models["LightGBM"].get_params())))
-            if "XGBoost" in self.models:
-                estims.append(("xgb", self.models["XGBoost"].__class__(**self.models["XGBoost"].get_params())))
-            if "HistGB" in self.models and not estims:
-                estims.append(("hgb", self.models["HistGB"].__class__(**self.models["HistGB"].get_params())))
-            if len(estims) >= 2:
-                ens = VotingClassifier(estimators=estims, voting="soft", n_jobs=-1)
-                ens.fit(Xf, yf)
-                p_ens = ens.predict_proba(Xva)[:, 1]
-                ap_ens = average_precision_score(yva, p_ens)
-                ap_best = average_precision_score(yva, proba_va)
-                if ap_ens >= ap_best:
-                    self.best_estimator = ens
-                    if self.recall_first:
-                        thr_hz, thr_nonhz = self.tune_dual_threshold(yva, p_ens, np.asarray(hz_va), base_thr=self.best_threshold)
-                        self.best_threshold_hz = np.clip(thr_hz, 0.01, 0.95)
-                        self.best_threshold = np.clip(thr_nonhz, 0.01, 0.95)
-                    else:
-                        thr, _, _, _ = threshold_search(yva, p_ens, beta=1.0)
-                        self.best_threshold = np.clip(thr, 0.01, 0.95)
-                        self.best_threshold_hz = self.best_threshold
-                    print(f"Ensemble selected. Thresholds: HZ={self.best_threshold_hz:.3f} non-HZ={self.best_threshold:.3f}")
-                else:
-                    print("Kept tuned single model.")
+            print("\nBuilding HZ-focused soft-voting ensemble...")
+            pool = []
+            if "RandomForest" in self.models: pool.append(("rf", self.models["RandomForest"].__class__(**self.models["RandomForest"].get_params())))
+            if "HistGB" in self.models:       pool.append(("hgb", self.models["HistGB"].__class__(**self.models["HistGB"].get_params())))
+            if "LightGBM" in self.models:     pool.append(("lgb", self.models["LightGBM"].__class__(**self.models["LightGBM"].get_params())))
+            if "XGBoost" in self.models:      pool.append(("xgb", self.models["XGBoost"].__class__(**self.models["XGBoost"].get_params())))
+            best_tuple, best_hz_rec, best_ap = None, -1.0, -1.0
+            weight_grid = [(1,1,1), (2,1,1), (1,2,1), (1,1,2), (2,2,1), (2,1,2), (1,2,2)]
+            for w in weight_grid:
+                if len(pool) == 2 and len(w) != 2: continue
+                if len(pool) == 3 and len(w) != 3: continue
+                if len(pool) >= 4 and len(w) != len(pool): continue
+                ens = VotingClassifier(estimators=pool, voting="soft", weights=list(w), n_jobs=-1)
+                ens.fit(Xtr, ytr)
+                p = ens.predict_proba(Xva)[:, 1]
+                th_hz2, th_nonhz2 = self._dual_threshold_from_validation(yva, p, hz_va, base_beta=2.0)
+                preds = (p >= np.where(hz_va==1, th_hz2, th_nonhz2)).astype(int)
+                hz_rec = recall_score((yva==1) & (hz_va==1), (preds==1) & (hz_va==1)) if np.any(hz_va==1) else 0.0
+                ap = average_precision_score(yva, p)
+                if (hz_rec > best_hz_rec) or (hz_rec == best_hz_rec and ap > best_ap):
+                    best_tuple, best_hz_rec, best_ap = (ens, th_hz2, th_nonhz2), hz_rec, ap
+            if best_tuple is not None and best_hz_rec >= 1.0 - 1e-9:
+                self.best_estimator, self.best_threshold_hz, self.best_threshold = best_tuple
+                print(f"Ensemble selected with HZ recall={best_hz_rec:.3f}. Thresholds: HZ={self.best_threshold_hz:.3f} non-HZ={self.best_threshold:.3f}")
+            else:
+                print("Kept tuned single model.")
+
+        print(f"Tuned thresholds: HZ={self.best_threshold_hz:.3f}  non-HZ={self.best_threshold:.3f}")
 
     def proba(self, X):
         if hasattr(self.best_estimator, "predict_proba"):
@@ -564,21 +577,23 @@ class ExoplanetClassifier:
         thr_vec = np.where(np.asarray(hz_flag) == 1, self.best_threshold_hz, self.best_threshold)
         return (p >= thr_vec).astype(int), p
 
-    def evaluate(self, X, y, hz_flag_test: pd.Series, names_test: pd.Series):
-
+    def evaluate(self, X, y, hz_flag_test: np.ndarray, names_test: pd.Series):
         print(f"{'='*80}Final Evaluation{'='*80}")
 
-        pre_true_hz = int(((y == 1) & (np.asarray(hz_flag_test) == 1)).sum())
+        pre_true_hz = int(((y == 1) & (hz_flag_test == 1)).sum())
         print(f"[Info] TEST split BEFORE anomaly filter: true HZ positives = {pre_true_hz}")
 
+        # Test-time filtering never drops HZ rows
         if self.no_anomaly:
             mask_if = np.ones(len(X), dtype=bool)
         else:
             mask_if = (self.anomaly_detector.predict(X) == 1)
+        if self.keep_hz_in_test:
+            mask_if = np.logical_or(mask_if, hz_flag_test == 1)
 
         Xf, yf = X[mask_if], y[mask_if]
         idx = np.where(mask_if)[0]
-        hz_f = np.asarray(hz_flag_test)[idx]
+        hz_f = hz_flag_test[idx]
         names_f = names_test.iloc[idx].reset_index(drop=True)
 
         anomalies_detected = int((~mask_if).sum())
@@ -616,8 +631,8 @@ class ExoplanetClassifier:
         n_true_hz = int(len(true_hz_idx))
         n_pred_hz = int(len(pred_hz_idx))
 
-        print("" + "-"*80)
-        print("Habitable Zone Summary (test, consistent split)")
+        print("-"*80)
+        print("Habitable Zone Summary (test)")
         print("-"*80)
         pr_true = (n_true_hz / n_true * 100) if n_true else 0.0
         pr_pred = (n_pred_hz / n_pred * 100) if n_pred else 0.0
@@ -629,19 +644,62 @@ class ExoplanetClassifier:
         model_label = self.best_name or (self.best_estimator.__class__.__name__ if self.best_estimator is not None else "unknown")
         tn, fp, fn, tp = cm.ravel()
 
+        # Build full-length records so we can mark anomalies (filtered-out rows)
+        total = len(X)
+        # Initialize containers for every test row
+        all_prediction = [None] * total
+        all_confidence = [None] * total
+        all_anomaly = [True] * total
+        all_hz = [bool(int(v)) for v in hz_flag_test]
+        all_actual = ["CONFIRMED" if int(v) == 1 else "NOT_CONFIRMED" for v in y]
+
+        # Fill kept (non-anomalous) rows at their original indices
+        for local_pos, orig_idx in enumerate(idx):
+            all_anomaly[orig_idx] = False
+            all_prediction[orig_idx] = "CONFIRMED" if int(preds[local_pos]) == 1 else "NOT_CONFIRMED"
+            all_confidence[orig_idx] = float(proba[local_pos])
+
+        # Select top N by confidence among non-anomalous rows
+        ranked = [i for i, c in enumerate(all_confidence) if c is not None]
+        ranked.sort(key=lambda i: all_confidence[i], reverse=True)
+
         predictions = []
-        order = np.argsort(proba)[::-1]
-        for idx in order[: min(25, len(order))]:
-            name = names_f.iloc[idx]
+        for i in ranked[: min(25, len(ranked))]:
+            name = names_test.iloc[i]
             if pd.isna(name):
-                name = f"Object-{idx}"
+                name = f"Object-{i}"
             predictions.append({
                 "name": str(name),
-                "prediction": "CONFIRMED" if int(preds[idx]) == 1 else "NOT_CONFIRMED",
-                "actual": "CONFIRMED" if int(yf[idx]) == 1 else "NOT_CONFIRMED",
-                "confidence": float(proba[idx]),
-                "hz": bool(int(hz_f[idx]) == 1),
-                "anomaly": False
+                "prediction": all_prediction[i] or "NOT_CONFIRMED",
+                "actual": all_actual[i],
+                "confidence": all_confidence[i],
+                "hz": bool(all_hz[i]),
+                "anomaly": bool(all_anomaly[i])
+            })
+
+        # Ensure any predicted HZ planets are present in the predictions list
+        try:
+            hz_pred_names = pred_hz_names
+        except NameError:
+            hz_pred_names = []
+
+        existing_names = set(p["name"] for p in predictions)
+        for pname in hz_pred_names:
+            if pname in existing_names:
+                continue
+            # find original indices in the full test names series
+            matches = list(np.where(names_test == pname)[0])
+            if not matches:
+                # fallback: skip if we cannot locate the name
+                continue
+            i = matches[0]
+            predictions.append({
+                "name": str(pname),
+                "prediction": all_prediction[i] or "NOT_CONFIRMED",
+                "actual": all_actual[i],
+                "confidence": all_confidence[i],
+                "hz": True,
+                "anomaly": bool(all_anomaly[i])
             })
 
         summary = {
@@ -718,7 +776,7 @@ class ExoplanetClassifier:
         joblib.dump(self.best_estimator, os.path.join(outdir, "model.pkl"))
         joblib.dump(
             {"name": self.best_name, "threshold": self.best_threshold, "threshold_hz": self.best_threshold_hz,
-             "recall_first": self.recall_first, "no_anomaly": self.no_anomaly},
+             "keep_hz_in_test": self.keep_hz_in_test, "no_anomaly": self.no_anomaly, "hz_boost": self.hz_boost},
             os.path.join(outdir, "model_meta.pkl")
         )
         print("Models saved to", outdir)
@@ -741,7 +799,7 @@ def parse_args():
     ap.add_argument("--fast", action="store_true", help="Reduced iterations and lighter models")
     ap.add_argument("--lightgbm", action="store_true", help="Include LightGBM if installed")
     ap.add_argument("--xgboost", action="store_true", help="Include XGBoost if installed")
-    ap.add_argument("--recall-first", action="store_true", help="Use F2 and dual thresholds to favor HZ recall")
+    ap.add_argument("--hz-boost", type=int, default=4, help="Replicate HZ-positive CONFIRMED samples in training")
     ap.add_argument("--no-anomaly", action="store_true", help="Disable IsolationForest filtering")
     return ap.parse_args()
 
@@ -772,7 +830,8 @@ def main():
         fast=args.fast,
         use_lgb=args.lightgbm,
         use_xgb=args.xgboost,
-        recall_first=args.recall_first,
+        hz_boost=args.hz_boost,
+        keep_hz_in_test=True,
         no_anomaly=args.no_anomaly
     )
 
@@ -791,7 +850,7 @@ def main():
     Xtr, Xte, ytr, yte, hz_tr, hz_te, names_tr, names_te = train_test_split(
         X, y, np.asarray(hz), names, test_size=args.test_size, stratify=strata, random_state=42
     )
-    clf._hz_train = np.asarray(hz_tr)  # for protecting HZ positives during anomaly filtering
+    clf._hz_train = np.asarray(hz_tr)
     print(f"\nTrain {Xtr.shape[0]} | Test {Xte.shape[0]}")
     print(f"[Info] TEST split true HZ positives (before IF): {int(((yte==1)&(np.asarray(hz_te)==1)).sum())}")
 
@@ -799,9 +858,9 @@ def main():
     clf.train(Xtr, ytr, np.asarray(hz_tr), use_tuning=args.tune, mc_iters=args.mc_iters,
               use_smote=args.smote, calibrate=args.calibrate, ensemble=args.ensemble)
 
-
     stats = clf.evaluate(Xte, yte, np.asarray(hz_te), names_te)
 
+    # Save artifacts and JSON report
     clf.save(args.models)
 
     target_counts = df["target"].value_counts().to_dict()
@@ -827,6 +886,18 @@ def main():
         "confusion_matrix": stats["confusion_matrix"],
         "training_info": training_info,
         "predictions": stats["predictions"],
+        # compatibility: older UI expects detailed_predictions with different key names
+        "detailed_predictions": [
+            {
+                "Object Name": p.get("name"),
+                "Prediction": p.get("prediction"),
+                "Actual": p.get("actual"),
+                "Confidence": p.get("confidence"),
+                "Habitable Zone": p.get("hz"),
+                "Anomaly": p.get("anomaly"),
+            }
+            for p in stats["predictions"]
+        ],
     }
 
     base_dir = os.path.dirname(os.path.abspath(__file__))

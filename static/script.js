@@ -107,6 +107,9 @@ const sampleData = {
   ],
 };
 
+// If true, the detailed predictions table will only show planets inside the Habitable Zone
+const SHOW_ONLY_HZ = true;
+
 let performanceChart;
 
 function asNumber(value, fallback = 0) {
@@ -202,7 +205,6 @@ function updatePredictionsTable(predictions) {
       <td>${pred.actual || "--"}</td>
       <td>${confidence}</td>
       <td>${hzIcon}</td>
-      <td>${pred.anomaly ? '<span class="status-badge status-anomaly">ANOMALY</span>' : ""}</td>
     `;
 
     tableBody.appendChild(row);
@@ -302,7 +304,53 @@ async function initializeDashboard() {
   updateSummary(summary, modelOverview.metrics || {});
   updateModelOverview(modelOverview);
   updateHabitableZones(data.hz_planets || {});
-  updatePredictionsTable(data.predictions);
+  const preds = Array.isArray(data.predictions) ? data.predictions : [];
+  const detailed = Array.isArray(data.detailed_predictions) ? data.detailed_predictions : [];
+
+  let visiblePreds = preds;
+  if (SHOW_ONLY_HZ) {
+    // Build a set of HZ names (true HZ + predicted HZ)
+    const hzTrue = Array.isArray(data.hz_planets?.true) ? data.hz_planets.true : [];
+    const hzPred = Array.isArray(data.hz_planets?.predicted) ? data.hz_planets.predicted : [];
+    const hzNames = new Set([...hzTrue, ...hzPred]);
+
+    // Map existing records by name for quick lookup (support both keys)
+    const byName = new Map();
+    preds.forEach(p => byName.set((p.name || "").toString(), p));
+    detailed.forEach(p => {
+      const key = p["Object Name"] || p["name"] || p["Name"];
+      if (key) byName.set(key.toString(), {
+        name: p["Object Name"] || p["name"] || key,
+        prediction: p["Prediction"] || p["prediction"] || "--",
+        actual: p["Actual"] || p["actual"] || "--",
+        confidence: p["Confidence"] || p["confidence"] || null,
+        hz: p["Habitable Zone"] || p["hz"] || true,
+        anomaly: p["Anomaly"] || p["anomaly"] || false,
+      });
+    });
+
+    // Prefer predicted HZ planets only (fallback to true HZ list if none predicted)
+    visiblePreds = [];
+    const ordered = hzPred && hzPred.length ? hzPred : hzTrue;
+    ordered.forEach(name => {
+      const rec = byName.get(name.toString());
+      if (rec) {
+        visiblePreds.push(rec);
+      } else {
+        // synthesize a minimal record if not found
+        visiblePreds.push({
+          name: name,
+          prediction: "--",
+          actual: "--",
+          confidence: null,
+          hz: true,
+          anomaly: false,
+        });
+      }
+    });
+  }
+
+  updatePredictionsTable(visiblePreds);
   updateLastUpdated(data.generated_at);
   createPerformanceChart(data.performance);
 }

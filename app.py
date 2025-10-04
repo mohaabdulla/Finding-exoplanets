@@ -6,6 +6,7 @@ import pandas as pd
 from predict import load_and_predict
 from train import main as train_main
 import argparse
+from flask import send_from_directory
 
 app = Flask(__name__)
 
@@ -19,6 +20,22 @@ def serve_file():
     with open("./templates/results.json", "r") as f:
         content = f.read()
     return content
+
+
+@app.route('/explore')
+def explore_index():
+    # List interactive exploration artifacts
+    base = os.path.join(os.path.dirname(__file__), "exploration", "interactive")
+    files = []
+    if os.path.isdir(base):
+        files = sorted([f for f in os.listdir(base) if f.lower().endswith('.html') and f.lower() != 'scatter_matrix.html'])
+    return render_template('explore.html', files=files)
+
+
+@app.route('/exploration/interactive/<path:filename>')
+def serve_interactive(filename):
+    base = os.path.join(os.path.dirname(__file__), "exploration", "interactive")
+    return send_from_directory(base, filename)
 
 @app.route('/api/train', methods=['POST'])
 def train_model():

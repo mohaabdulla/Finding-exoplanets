@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exploration Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Interactive Exploration</h1>
+      <p>Below are the interactive visualizations generated from the sampled dataset. They are embedded so you can inspect them inline.</p>
+
+      {% if files %}
+        <div style="display:flex;gap:12px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+          <button id="expandAllBtn" class="btn" style="background:#2980b9;color:#fff;padding:8px 10px;border-radius:6px;">Expand all</button>
+          <button id="collapseAllBtn" class="btn" style="background:#95a5a6;color:#fff;padding:8px 10px;border-radius:6px;">Collapse all</button>
+          <span style="color:#666;font-size:0.95rem">(Click a card's Show button to lazy-load each interactive plot)</span>
+        </div>
+        {% for f in files %}
+          <div class="card" data-fname="{{ f }}">
+            <h3 class="card-title">{{ f }}</h3>
+            <div class="explore-controls" style="margin-bottom:8px">
+              <button class="showBtn btn" data-file="{{ f }}" style="padding:6px 10px;background:#16a085;color:#fff;border-radius:6px">Show visualization</button>
+              <a href="/exploration/interactive/{{ f }}" target="_blank" style="margin-left:8px">Open in new tab</a>
+            </div>
+            <div class="explore-frame" style="width:100%;height:0;border:1px solid #ddd;overflow:hidden;transition:height 0.25s ease"></div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="card">
+          <p>No exploration artifacts found. Run <code>python explore_interactive.py</code> to generate visualizations.</p>
+        </div>
+      {% endif %}
+
+      <p><a href="/">Back to main dashboard</a></p>
+    </div>
+      <script>
+        function createIframe(url) {
+          const ifr = document.createElement('iframe');
+          ifr.src = url;
+          ifr.style.width = '100%';
+          ifr.style.height = '100%';
+          ifr.style.border = '0';
+          return ifr;
+        }
+
+        document.addEventListener('DOMContentLoaded', function(){
+          const showButtons = document.querySelectorAll('.showBtn');
+          showButtons.forEach(btn => {
+            btn.addEventListener('click', function(){
+              const file = this.dataset.file;
+              const card = this.closest('.card');
+              const frameWrap = card.querySelector('.explore-frame');
+              // Toggle
+              if (frameWrap.dataset.loaded === '1') {
+                // hide
+                frameWrap.style.height = '0px';
+                frameWrap.dataset.loaded = '0';
+                this.textContent = 'Show visualization';
+              } else {
+                // load if not loaded
+                if (!frameWrap.querySelector('iframe')) {
+                  const url = `/exploration/interactive/${file}`;
+                  const ifr = createIframe(url);
+                  frameWrap.appendChild(ifr);
+                }
+                frameWrap.style.height = '640px';
+                frameWrap.dataset.loaded = '1';
+                this.textContent = 'Hide visualization';
+              }
+            });
+          });
+
+          const expandAll = document.getElementById('expandAllBtn');
+          const collapseAll = document.getElementById('collapseAllBtn');
+          expandAll && expandAll.addEventListener('click', () => {
+            document.querySelectorAll('.card').forEach(card => {
+              const frameWrap = card.querySelector('.explore-frame');
+              const fname = card.dataset.fname;
+              if (!frameWrap.querySelector('iframe')) {
+                const ifr = createIframe(`/exploration/interactive/${fname}`);
+                frameWrap.appendChild(ifr);
+              }
+              frameWrap.style.height = '640px';
+              frameWrap.dataset.loaded = '1';
+              const btn = card.querySelector('.showBtn'); if (btn) btn.textContent = 'Hide visualization';
+            });
+          });
+          collapseAll && collapseAll.addEventListener('click', () => {
+            document.querySelectorAll('.card').forEach(card => {
+              const frameWrap = card.querySelector('.explore-frame');
+              frameWrap.style.height = '0px';
+              frameWrap.dataset.loaded = '0';
+              const btn = card.querySelector('.showBtn'); if (btn) btn.textContent = 'Show visualization';
+            });
+          });
+        });
+      </script>
+  </body>
+</html>

@@ -127,6 +127,9 @@ header {
   box-shadow: var(--shadow);
 }
 
+.chart-controls label { font-size: 0.95rem; color: var(--text); }
+.chart-controls input[type="checkbox"] { margin-right: 6px; }
+
 .hz-planets {
   display: grid;
   grid-template-columns: 1fr 1fr;

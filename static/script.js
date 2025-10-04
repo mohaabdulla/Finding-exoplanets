@@ -227,7 +227,8 @@ function updateLastUpdated(timestamp) {
 }
 
 function createPerformanceChart(performance) {
-  const ctx = document.getElementById("performanceChart").getContext("2d");
+  const canvas = document.getElementById("performanceChart");
+  const ctx = canvas.getContext("2d");
   if (performanceChart) {
     performanceChart.destroy();
     performanceChart = null;
@@ -238,61 +239,54 @@ function createPerformanceChart(performance) {
     return;
   }
 
-  const datasets = [
-    {
-      label: "Average Precision",
-      data: performance.ap_scores || [],
-      backgroundColor: "#3498db",
-      borderColor: "#2980b9",
-      borderWidth: 1,
-    },
-    {
-      label: "F1 Score",
-      data: performance.f1_scores || [],
-      backgroundColor: "#9b59b6",
-      borderColor: "#8e44ad",
-      borderWidth: 1,
-    },
-  ];
+  // Read controls to decide which metrics to show
+  const showAP = document.getElementById('cb_ap')?.checked ?? true;
+  const showF1 = document.getElementById('cb_f1')?.checked ?? true;
+  const showPrecision = document.getElementById('cb_precision')?.checked ?? false;
+  const showRecall = document.getElementById('cb_recall')?.checked ?? false;
+  const showAccuracy = document.getElementById('cb_accuracy')?.checked ?? false;
 
-  if (performance.accuracy_scores && performance.accuracy_scores.length === labels.length) {
-    datasets.push({
-      label: "Accuracy",
-      data: performance.accuracy_scores,
-      backgroundColor: "#2ecc71",
-      borderColor: "#27ae60",
-      borderWidth: 1,
-    });
+  const datasets = [];
+  if (showAP && performance.ap_scores) {
+    datasets.push({ label: 'Average Precision', data: performance.ap_scores, backgroundColor: '#3498db', borderColor: '#2980b9', borderWidth: 1 });
+  }
+  if (showF1 && performance.f1_scores) {
+    datasets.push({ label: 'F1 Score', data: performance.f1_scores, backgroundColor: '#9b59b6', borderColor: '#8e44ad', borderWidth: 1 });
+  }
+  if (showPrecision && performance.precision_scores) {
+    datasets.push({ label: 'Precision', data: performance.precision_scores, backgroundColor: '#f39c12', borderColor: '#d35400', borderWidth: 1 });
+  }
+  if (showRecall && performance.recall_scores) {
+    datasets.push({ label: 'Recall', data: performance.recall_scores, backgroundColor: '#2ecc71', borderColor: '#27ae60', borderWidth: 1 });
+  }
+  if (showAccuracy && performance.accuracy_scores) {
+    datasets.push({ label: 'Accuracy', data: performance.accuracy_scores, backgroundColor: '#34495e', borderColor: '#2c3e50', borderWidth: 1 });
   }
 
+  // Chart size control
+  const sizeVal = Number(document.getElementById('chartSizeSelect')?.value || 300);
+  canvas.height = sizeVal;
+
   performanceChart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets,
-    },
+    type: 'bar',
+    data: { labels, datasets },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       scales: {
-        y: {
-          beginAtZero: true,
-          max: 1.0,
-          title: {
-            display: true,
-            text: "Score",
-          },
-        },
+        y: { beginAtZero: true, max: 1.0, title: { display: true, text: 'Score' } },
       },
-      plugins: {
-        legend: {
-          position: "top",
-        },
-        title: {
-          display: true,
-          text: "Model Performance Comparison",
-        },
-      },
+      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Model Performance Comparison' } },
     },
+  });
+}
+
+function attachChartControls(performance) {
+  const ids = ['cb_ap','cb_f1','cb_precision','cb_recall','cb_accuracy','chartSizeSelect'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => createPerformanceChart(performance));
   });
 }
 
@@ -352,7 +346,24 @@ async function initializeDashboard() {
 
   updatePredictionsTable(visiblePreds);
   updateLastUpdated(data.generated_at);
-  createPerformanceChart(data.performance);
+  // Lazy-render the performance chart only when user expands it
+  const toggleBtn = document.getElementById('toggleChartBtn');
+  const perfWrap = document.getElementById('performanceWrapper');
+  let perfLoaded = false;
+  toggleBtn && toggleBtn.addEventListener('click', () => {
+    if (!perfLoaded) {
+      createPerformanceChart(data.performance);
+      attachChartControls(data.performance);
+      perfLoaded = true;
+      toggleBtn.textContent = 'Hide chart';
+      perfWrap.style.height = (Number(document.getElementById('chartSizeSelect')?.value || 300)) + 'px';
+    } else {
+      // collapse
+      perfWrap.style.height = '0px';
+      perfLoaded = false;
+      toggleBtn.textContent = 'Show chart';
+    }
+  });
 }
 
 window.addEventListener("DOMContentLoaded", initializeDashboard);

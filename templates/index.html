@@ -26,6 +26,9 @@
           </div>
           <div class="header-actions">
             <div id="lastUpdated"></div>
+            <div style="margin-left:12px">
+              <a href="/explore" class="btn" style="text-decoration:none;padding:8px 12px;background:#2980b9;color:#fff;border-radius:6px;">Explore</a>
+            </div>
           </div>
         </div>
       </div>
@@ -72,7 +75,20 @@
         <h3 class="card-title">
           <i class="fas fa-chart-line"></i> Model Performance
         </h3>
-        <canvas id="performanceChart" height="300"></canvas>
+        <div class="chart-controls" style="margin-bottom:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+          <label><input type="checkbox" id="cb_ap" checked> AP</label>
+          <label><input type="checkbox" id="cb_f1" checked> F1</label>
+          <label><input type="checkbox" id="cb_precision"> Precision</label>
+          <label><input type="checkbox" id="cb_recall"> Recall</label>
+          <label><input type="checkbox" id="cb_accuracy"> Accuracy</label>
+          <label style="margin-left:8px; font-size:0.9rem; color:#666">Size: <select id="chartSizeSelect"><option value="220">Small</option><option value="300" selected>Medium</option><option value="420">Large</option></select></label>
+        </div>
+        <div style="margin-bottom:8px">
+          <button id="toggleChartBtn" class="btn" style="padding:6px 10px;background:#2980b9;color:#fff;border-radius:6px">Show chart</button>
+        </div>
+        <div id="performanceWrapper" style="height:0;overflow:hidden;transition:height 0.25s ease">
+          <canvas id="performanceChart"></canvas>
+        </div>
       </div>
 
       <div class="card model-overview-card">
@@ -153,6 +169,13 @@
             </tbody>
           </table>
         </div>
+      </div>
+      
+      <!-- Quick link to Explore page -->
+      <div class="card">
+        <h3 class="card-title"><i class="fas fa-compass"></i> Explore Interactive Visualizations</h3>
+        <p>Open interactive exploration tools for feature analysis, permutation importance and partial dependence plots.</p>
+        <p><a href="/explore" class="btn" style="text-decoration:none;padding:8px 12px;background:#16a085;color:#fff;border-radius:6px;">Open Explorer</a></p>
       </div>
     </div>
 

@@ -18,8 +18,9 @@
           <span style="color:#666;font-size:0.95rem">(Click a card's Show button to lazy-load each interactive plot)</span>
         </div>
         {% for f in files %}
+          {% set base = f[:-5] if f.endswith('.html') else f %}
           <div class="card" data-fname="{{ f }}">
-            <h3 class="card-title">{{ f }}</h3>
+            <h3 class="card-title">{{ base }}</h3>
             <div class="explore-controls" style="margin-bottom:8px">
               <button class="showBtn btn" data-file="{{ f }}" style="padding:6px 10px;background:#16a085;color:#fff;border-radius:6px">Show visualization</button>
               <a href="/exploration/interactive/{{ f }}" target="_blank" style="margin-left:8px">Open in new tab</a>

@@ -76,11 +76,11 @@
           <i class="fas fa-chart-line"></i> Model Performance
         </h3>
         <div class="chart-controls" style="margin-bottom:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-          <label><input type="checkbox" id="cb_ap" checked> AP</label>
-          <label><input type="checkbox" id="cb_f1" checked> F1</label>
-          <label><input type="checkbox" id="cb_precision"> Precision</label>
-          <label><input type="checkbox" id="cb_recall"> Recall</label>
-          <label><input type="checkbox" id="cb_accuracy"> Accuracy</label>
+          <div class="content"><label class="checkBox"><input id="cb_ap" type="checkbox" checked><div class="transition"></div></label> AP</div>
+          <div class="content"><label class="checkBox"><input id="cb_f1" type="checkbox" checked><div class="transition"></div></label> F1</div>
+          <div class="content"><label class="checkBox"><input id="cb_precision" type="checkbox"><div class="transition"></div></label> Precision</div>
+          <div class="content"><label class="checkBox"><input id="cb_recall" type="checkbox"><div class="transition"></div></label> Recall</div>
+          <div class="content"><label class="checkBox"><input id="cb_accuracy" type="checkbox"><div class="transition"></div></label> Accuracy</div>
           <label style="margin-left:8px; font-size:0.9rem; color:#666">Size: <select id="chartSizeSelect"><option value="220">Small</option><option value="300" selected>Medium</option><option value="420">Large</option></select></label>
         </div>
         <div style="margin-bottom:8px">

@@ -105,6 +105,17 @@ header { background: linear-gradient(180deg,var(--brand-strong), color-mix(in sr
 
 /* Buttons */
 .btn { display:inline-flex; align-items:center; gap:.5rem; padding:.55rem .85rem; border-radius:8px; font-weight:600; font-size:clamp(.9rem,.9vw,1rem); border: none; cursor: pointer; transition: box-shadow .12s ease, transform .06s ease; background: var(--surface); color:var(--brand-strong); box-shadow: var(--shadow-sm); }
+.btn:hover, .btn:focus-visible {
+  background: #3498db;
+  color: #fff;
+  transform: scale(1.07);
+  box-shadow: 0 4px 16px rgba(46,163,255,0.18);
+  transition: box-shadow .18s cubic-bezier(.4,2,.3,1), transform .18s cubic-bezier(.4,2,.3,1), background .18s cubic-bezier(.4,2,.3,1), color .18s cubic-bezier(.4,2,.3,1);
+}
+.btn:active {
+  transform: scale(0.97);
+  background: #217dbb;
+}
 .btn:disabled { opacity:.5; cursor:not-allowed; transform:none }
 .btn:active { transform: translateY(1px) }
 .btn:focus { outline: none }

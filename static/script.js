@@ -179,7 +179,29 @@ function updateHabitableZones(hzPlanets) {
   (hzPlanets?.predicted || []).forEach((planet) => {
     const planetItem = document.createElement("div");
     planetItem.className = "planet-item";
-    planetItem.innerHTML = `<i class="fas fa-search"></i> ${planet}`;
+
+    // create a safe slug for the NASA exoplanet catalog link
+    function slugify(name) {
+      if (!name) return "";
+      return name.toString().toLowerCase()
+        .trim()
+        // replace spaces with hyphens
+        .replace(/\s+/g, '-')
+        // replace periods with hyphens
+        .replace(/\./g, '-')
+        // remove any characters that are not alphanumeric, hyphen or underscore
+        .replace(/[^a-z0-9\-\_]/g, '')
+        // collapse multiple hyphens
+        .replace(/-+/g, '-');
+    }
+
+    const slug = slugify(planet);
+    const nasaUrl = `https://science.nasa.gov/exoplanet-catalog/${slug}/`;
+
+    // small inline-styled button that opens the NASA catalog page in a new tab
+    const linkHtml = ` <a href="${nasaUrl}" target="_blank" rel="noopener noreferrer" style="margin-left:8px;padding:4px 8px;background:#2980b9;color:#fff;border-radius:4px;text-decoration:none;font-size:0.85em;">View</a>`;
+
+    planetItem.innerHTML = `<i class="fas fa-search"></i> ${planet}${linkHtml}`;
     predictedHzContainer.appendChild(planetItem);
   });
 }

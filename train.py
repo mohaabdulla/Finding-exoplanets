@@ -828,6 +828,7 @@ def parse_args():
     ap.add_argument("--no-anomaly", action="store_true", help="Disable IsolationForest filtering")
     ap.add_argument("--no-hgb", action="store_true", help="Disable HistGradientBoostingClassifier to speed up runs")
     ap.add_argument("--prefer-boosters", action="store_true", help="Prefer LightGBM/XGBoost (faster C++ boosters) if installed")
+    ap.add_argument("--eval-all", action="store_true", help="Train and evaluate on the whole dataset (no holdout). Not recommended for generalization.")
     return ap.parse_args()
 
 def main():
@@ -875,21 +876,42 @@ def main():
     df = clf.targetize(df)
 
     X, y, hz, names = clf.preprocess(df, fit=True)
+    dataset_size = int(df.shape[0])
 
-    # Stratify by combined class+HZ to balance rare HZ positives across splits
-    strata = (y.astype(int) * 2 + np.asarray(hz).astype(int))
-    Xtr, Xte, ytr, yte, hz_tr, hz_te, names_tr, names_te = train_test_split(
-        X, y, np.asarray(hz), names, test_size=args.test_size, stratify=strata, random_state=42
-    )
-    clf._hz_train = np.asarray(hz_tr)
-    print(f"\nTrain {Xtr.shape[0]} | Test {Xte.shape[0]}")
-    print(f"[Info] TEST split true HZ positives (before IF): {int(((yte==1)&(np.asarray(hz_te)==1)).sum())}")
+    if args.eval_all:
+        # Use all data for both training and evaluation (no holdout). This will
+        # train and then evaluate on the same data — useful for full-coverage
+        # scans but not for unbiased generalization metrics.
+        print("Evaluating on full dataset (no holdout) — results are optimistic.)")
+        Xtr, Xte = X, X
+        ytr, yte = y, y
+        hz_tr, hz_te = np.asarray(hz), np.asarray(hz)
+        names_tr, names_te = names, names
+        clf._hz_train = np.asarray(hz_tr)
+        print(f"\nTrain+Test {Xtr.shape[0]} | Test {Xte.shape[0]}")
+        print(f"[Info] TEST split true HZ positives (before IF): {int(((yte==1)&(np.asarray(hz_te)==1)).sum())}")
+    else:
+        # Stratify by combined class+HZ to balance rare HZ positives across splits
+        strata = (y.astype(int) * 2 + np.asarray(hz).astype(int))
+        Xtr, Xte, ytr, yte, hz_tr, hz_te, names_tr, names_te = train_test_split(
+            X, y, np.asarray(hz), names, test_size=args.test_size, stratify=strata, random_state=42
+        )
+        clf._hz_train = np.asarray(hz_tr)
+        print(f"\nTrain {Xtr.shape[0]} | Test {Xte.shape[0]}")
+        print(f"[Info] TEST split true HZ positives (before IF): {int(((yte==1)&(np.asarray(hz_te)==1)).sum())}")
 
     # Train and evaluate
     clf.train(Xtr, ytr, np.asarray(hz_tr), use_tuning=args.tune, mc_iters=args.mc_iters,
               use_smote=args.smote, calibrate=args.calibrate, ensemble=args.ensemble)
 
     stats = clf.evaluate(Xte, yte, np.asarray(hz_te), names_te)
+
+    # If we evaluated on the full dataset, make the summary total_samples reflect that
+    if args.eval_all:
+        try:
+            stats["summary"]["total_samples"] = int(dataset_size)
+        except Exception:
+            pass
 
     # Save artifacts and JSON report
     clf.save(args.models)
@@ -900,7 +922,7 @@ def main():
         "threshold": round(stats["model_overview"]["metrics"]["threshold"], 3),
         "threshold_hz": round(stats["model_overview"]["metrics"]["threshold_hz"], 3),
         "train_samples": int(Xtr.shape[0]),
-        "test_samples": int(Xte.shape[0]),
+        "test_samples": int(Xte.shape[0]) if not args.eval_all else int(dataset_size),
         "filtered_samples": stats["summary"]["filtered_samples"],
         "target_distribution": {
             "class_0": int(target_counts.get(0, 0)),
@@ -915,6 +937,7 @@ def main():
         "performance": stats["performance"],
         "hz_planets": stats["hz_planets"],
         "confusion_matrix": stats["confusion_matrix"],
+        "dataset_size": dataset_size,
         "training_info": training_info,
         "predictions": stats["predictions"],
         # compatibility: older UI expects detailed_predictions with different key names
